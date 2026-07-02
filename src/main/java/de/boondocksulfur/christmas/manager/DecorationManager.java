@@ -33,7 +33,7 @@ public class DecorationManager {
     public DecorationManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
-        this.scheduler = new FoliaSchedulerHelper(plugin);
+        this.scheduler = plugin.getFoliaScheduler();
     }
 
     public void start() {

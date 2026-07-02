@@ -33,7 +33,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Öffnet die Datenbankverbindung und erstellt die Tabelle falls nötig
      */
-    public void open() throws SQLException {
+    public synchronized void open() throws SQLException {
         try {
             Class.forName("org.sqlite.JDBC");
         } catch (ClassNotFoundException e) {
@@ -80,7 +80,7 @@ public class BiomeSnapshotDatabase {
      * Speichert einen 3D Chunk-Snapshot (komprimiert)
      * Format: [Magic 0x3D] [yLayers] [yStart] [yStep] [biomes...]
      */
-    public void saveChunk3D(String world, int x, int z, Biome[][][] biomes3D, int yStart, int yStep) throws SQLException {
+    public synchronized void saveChunk3D(String world, int x, int z, Biome[][][] biomes3D, int yStart, int yStep) throws SQLException {
         if (biomes3D == null || biomes3D.length == 0) {
             throw new IllegalArgumentException("biomes3D cannot be null or empty");
         }
@@ -130,7 +130,7 @@ public class BiomeSnapshotDatabase {
      *
      * @return BiomeSnapshot3D oder null wenn nicht gefunden
      */
-    public BiomeSnapshot3D loadChunk3D(String world, int x, int z) throws SQLException {
+    public synchronized BiomeSnapshot3D loadChunk3D(String world, int x, int z) throws SQLException {
         String sql = "SELECT biomes FROM chunks WHERE world = ? AND x = ? AND z = ?";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -152,7 +152,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Prüft ob ein Chunk im Snapshot existiert
      */
-    public boolean hasChunk(String world, int x, int z) throws SQLException {
+    public synchronized boolean hasChunk(String world, int x, int z) throws SQLException {
         String sql = "SELECT 1 FROM chunks WHERE world = ? AND x = ? AND z = ? LIMIT 1";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -169,7 +169,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Löscht einen Chunk aus dem Snapshot
      */
-    public void deleteChunk(String world, int x, int z) throws SQLException {
+    public synchronized void deleteChunk(String world, int x, int z) throws SQLException {
         String sql = "DELETE FROM chunks WHERE world = ? AND x = ? AND z = ?";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -183,7 +183,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Gibt die Anzahl gespeicherter Chunks zurück
      */
-    public int getChunkCount() throws SQLException {
+    public synchronized int getChunkCount() throws SQLException {
         String sql = "SELECT COUNT(*) FROM chunks";
 
         try (Statement stmt = connection.createStatement();
@@ -206,7 +206,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Löscht alle Snapshots
      */
-    public void clearAll() throws SQLException {
+    public synchronized void clearAll() throws SQLException {
         String sql = "DELETE FROM chunks";
 
         try (Statement stmt = connection.createStatement()) {
@@ -224,7 +224,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Schließt die Datenbankverbindung
      */
-    public void close() {
+    public synchronized void close() {
         if (connection != null) {
             try {
                 connection.close();
@@ -551,7 +551,7 @@ public class BiomeSnapshotDatabase {
     /**
      * Gibt alle Chunk-Koordinaten aus der Datenbank zurück
      */
-    public java.util.List<ChunkCoords> getAllChunkCoordinates() throws SQLException {
+    public synchronized java.util.List<ChunkCoords> getAllChunkCoordinates() throws SQLException {
         String sql = "SELECT world, x, z FROM chunks";
         java.util.List<ChunkCoords> result = new java.util.ArrayList<>();
 

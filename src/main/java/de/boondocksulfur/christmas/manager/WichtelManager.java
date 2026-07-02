@@ -31,13 +31,15 @@ public class WichtelManager {
     private final Map<UUID, WrappedTask> entityStealTasks = new java.util.concurrent.ConcurrentHashMap<>();
 
     // Tracker statt globale Scans
-    private final Set<UUID> trackedWichtel = new HashSet<>();
-    private final Set<UUID> trackedElfen   = new HashSet<>();
+    // FOLIA FIX: ConcurrentHashMap.newKeySet() - wird von mehreren Region-Threads
+    // gleichzeitig mutiert (add im Location Scheduler, remove im Entity Scheduler, cleanup vom Command)
+    private final Set<UUID> trackedWichtel = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<UUID> trackedElfen   = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public WichtelManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
-        this.scheduler = new FoliaSchedulerHelper(plugin);
+        this.scheduler = plugin.getFoliaScheduler();
     }
 
     public void start() {
@@ -184,13 +186,17 @@ public class WichtelManager {
         if (!w.getName().equals(worldName)) return;
 
         // Verwende getrackte Liste statt Entity-Iteration
-        int current = trackedWichtel.size();
-        if (current >= plugin.getConfig().getInt("wichtel.maxPerWorld", 6)) return;
+        final int maxWichtel = plugin.getConfig().getInt("wichtel.maxPerWorld", 6);
+        if (trackedWichtel.size() >= maxWichtel) return;
 
         // FOLIA FIX: Spawne auf Location Scheduler (für getHighestBlockAt)
         Location playerLoc = player.getLocation();
 
         scheduler.runAtLocation(playerLoc, () -> {
+            // OVERSPAWN FIX: Limit erneut prüfen - zwischen Einplanung und Ausführung
+            // können parallele Spawns anderer Spieler das Limit schon erreicht haben!
+            if (trackedWichtel.size() >= maxWichtel) return;
+
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 
@@ -232,13 +238,16 @@ public class WichtelManager {
         if (!w.getName().equals(worldName)) return;
 
         // Verwende getrackte Liste statt Entity-Iteration
-        int current = trackedElfen.size();
-        if (current >= plugin.getConfig().getInt("elves.maxPerWorld", 4)) return;
+        final int maxElfen = plugin.getConfig().getInt("elves.maxPerWorld", 4);
+        if (trackedElfen.size() >= maxElfen) return;
 
         // FOLIA FIX: Spawne auf Location Scheduler (für getHighestBlockAt)
         Location playerLoc = player.getLocation();
 
         scheduler.runAtLocation(playerLoc, () -> {
+            // OVERSPAWN FIX: Limit erneut prüfen (siehe spawnWichtelNearPlayer)
+            if (trackedElfen.size() >= maxElfen) return;
+
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 

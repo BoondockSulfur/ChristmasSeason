@@ -34,7 +34,7 @@ public class SnowmanManager {
     public SnowmanManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
-        this.scheduler = new FoliaSchedulerHelper(plugin);
+        this.scheduler = plugin.getFoliaScheduler();
     }
 
     public void start() {
@@ -144,14 +144,17 @@ public class SnowmanManager {
         if (!w.getName().equals(worldName)) return;
 
         // FOLIA FIX: Zähle tracked Schneemänner (global limit) - thread-safe!
-        int current = trackedSnowmen.size();
-        int max = plugin.getConfig().getInt("snowmen.maxPerWorld", 6);
-        if (current >= max) return;
+        final int max = plugin.getConfig().getInt("snowmen.maxPerWorld", 6);
+        if (trackedSnowmen.size() >= max) return;
 
         // FOLIA FIX: Spawne auf Location Scheduler (für getHighestBlockAt)
         Location playerLoc = player.getLocation();
 
         scheduler.runAtLocation(playerLoc, () -> {
+            // OVERSPAWN FIX: Limit erneut prüfen - zwischen Einplanung und Ausführung
+            // können parallele Spawns anderer Spieler das Limit schon erreicht haben!
+            if (trackedSnowmen.size() >= max) return;
+
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 

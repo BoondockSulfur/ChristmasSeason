@@ -15,7 +15,7 @@ public class SnowstormManager {
 
     public SnowstormManager(ChristmasSeason plugin) {
         this.plugin = plugin;
-        this.scheduler = new FoliaSchedulerHelper(plugin);
+        this.scheduler = plugin.getFoliaScheduler();
     }
 
     public void start() {

@@ -17,7 +17,8 @@ public class LanguageManager {
 
     private final ChristmasSeason plugin;
     private YamlConfiguration messages;
-    private final Map<String, String> cache = new HashMap<>();
+    // FOLIA FIX: ConcurrentHashMap - getMessage() wird auch aus Region-Tasks aufgerufen
+    private final Map<String, String> cache = new java.util.concurrent.ConcurrentHashMap<>();
     private String currentLanguage;
 
     public LanguageManager(ChristmasSeason plugin) {

@@ -27,12 +27,13 @@ public class GiftManager {
     private final Map<UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
 
     // OPTIMIERUNG: Tracke gespawnte Geschenk-Locations statt alle Chunks zu durchsuchen
-    private final Set<Location> trackedGifts = new HashSet<>();
+    // FOLIA FIX: ConcurrentHashMap.newKeySet() - add/remove laufen auf Location-Scheduler-Threads
+    private final Set<Location> trackedGifts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public GiftManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
-        this.scheduler = new FoliaSchedulerHelper(plugin);
+        this.scheduler = plugin.getFoliaScheduler();
     }
 
     public void start() {
@@ -157,8 +158,10 @@ public class GiftManager {
         scheduler.runAtLocationLater(chestLoc, () -> {
             if (placed.getType() == Material.CHEST) {
                 try { placed.setType(Material.AIR, false); } catch (Throwable ignored) { placed.setType(Material.AIR); }
-                trackedGifts.remove(chestLoc); // Entferne aus Tracking
             }
+            // LEAK FIX: Immer aus Tracking entfernen - auch wenn die Kiste
+            // inzwischen von Spielern abgebaut wurde (sonst wächst das Set endlos)
+            trackedGifts.remove(chestLoc);
         }, lifetime * 20L);
 
         if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true)) {

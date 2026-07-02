@@ -7,9 +7,11 @@ import de.boondocksulfur.christmas.cmd.XmasGiftCommand;
 import de.boondocksulfur.christmas.listener.*;
 import de.boondocksulfur.christmas.manager.*;
 import de.boondocksulfur.christmas.util.LanguageManager;
+import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 
 public class ChristmasSeason extends JavaPlugin {
 
+    private FoliaSchedulerHelper foliaScheduler;
     private LanguageManager languageManager;
     private SnowstormManager snowstormManager;
     private BiomeSnowManager biomeSnowManager;
@@ -30,6 +32,8 @@ public class ChristmasSeason extends JavaPlugin {
         saveResourceIfAbsent("messages_de.yml");
         saveResourceIfAbsent("messages_en.yml");
 
+        // Eine geteilte FoliaLib-Instanz für alle Manager
+        this.foliaScheduler    = new FoliaSchedulerHelper(this);
         this.languageManager   = new LanguageManager(this);
         this.snowstormManager  = new SnowstormManager(this);
         this.biomeSnowManager  = new BiomeSnowManager(this);
@@ -121,6 +125,7 @@ public class ChristmasSeason extends JavaPlugin {
     }
 
     // Getters
+    public FoliaSchedulerHelper getFoliaScheduler() { return foliaScheduler; }
     public LanguageManager getLanguageManager() { return languageManager; }
     public GiftManager getGiftManager() { return giftManager; }
     public BiomeSnowManager getBiomeSnowManager() { return biomeSnowManager; }
@@ -142,7 +147,7 @@ public class ChristmasSeason extends JavaPlugin {
     /** Debug-Log: Nur ausgeben wenn Debug-Modus aktiv */
     public void debug(String message) {
         if (debugMode) {
-            getLogger().info("§8[DEBUG] §7" + message);
+            getLogger().info("[DEBUG] " + org.bukkit.ChatColor.stripColor(message));
         }
     }
 
@@ -150,14 +155,14 @@ public class ChristmasSeason extends JavaPlugin {
     public void debugLang(String key, Object... replacements) {
         if (debugMode) {
             String message = languageManager.getMessage(key, replacements);
-            getLogger().info("§8[DEBUG] §7" + message);
+            getLogger().info("[DEBUG] " + org.bukkit.ChatColor.stripColor(message));
         }
     }
 
     /** Verbose Debug-Log: Nur ausgeben wenn Verbose-Debug-Modus aktiv */
     public void verboseDebug(String message) {
         if (verboseDebugMode) {
-            getLogger().info("§8[VERBOSE] §7" + message);
+            getLogger().info("[VERBOSE] " + org.bukkit.ChatColor.stripColor(message));
         }
     }
 
@@ -165,7 +170,7 @@ public class ChristmasSeason extends JavaPlugin {
     public void verboseDebugLang(String key, Object... replacements) {
         if (verboseDebugMode) {
             String message = languageManager.getMessage(key, replacements);
-            getLogger().info("§8[VERBOSE] §7" + message);
+            getLogger().info("[VERBOSE] " + org.bukkit.ChatColor.stripColor(message));
         }
     }
 }

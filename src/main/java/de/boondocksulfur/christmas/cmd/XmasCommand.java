@@ -19,7 +19,7 @@ public class XmasCommand implements CommandExecutor {
     public XmasCommand(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
-        this.scheduler = new FoliaSchedulerHelper(plugin);
+        this.scheduler = plugin.getFoliaScheduler();
     }
 
     @Override
@@ -88,22 +88,15 @@ public class XmasCommand implements CommandExecutor {
             }
 
             case "reload" -> {
-                // Sichere Variante ohne plugin.reloadALL()
-                plugin.reloadConfig();
-                lang.reload();
-
-                // Manager neu starten, damit neue Settings greifen
-                try { plugin.getBiomeSnowManager().stop(); } catch (Throwable ignored) {}
-                try { plugin.getBiomeSnowManager().start(); } catch (Throwable ignored) {}
-
-                // Schneesturm-Manager neu starten (für neue Timing-Settings)
-                try { plugin.getSnowstormManager().stop(); } catch (Throwable ignored) {}
+                // CONSISTENCY FIX: ALLE Manager neu starten, nicht nur Biome+Snowstorm -
+                // sonst behalten Gifts/Wichtel/Snowmen/Decoration alte Settings bis zum
+                // nächsten off/on. reloadAll() = reloadConfig + lang.reload + stop + start.
                 try {
-                    if (plugin.isActive()) {
-                        plugin.getSnowstormManager().start();
-                    }
-                } catch (Throwable ignored) {}
-
+                    plugin.reloadAll();
+                } catch (Throwable t) {
+                    plugin.getLogger().severe("Fehler beim Reload: " + t.getMessage());
+                    t.printStackTrace();
+                }
                 sender.sendMessage(lang.get("command.reload.success"));
             }
 
