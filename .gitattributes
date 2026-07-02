@@ -1,0 +1,8 @@
+# Zeilenenden normalisieren: im Repo immer LF, unabhängig vom Betriebssystem.
+# Verhindert, dass komplette Dateien als geändert erscheinen (CRLF-Falle).
+* text=auto eol=lf
+
+# Binärdateien nie anfassen
+*.jar binary
+*.png binary
+*.db binary
