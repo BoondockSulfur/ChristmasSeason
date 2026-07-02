@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import de.boondocksulfur.christmas.cmd.XmasCommand;
 import de.boondocksulfur.christmas.cmd.XmasGiftCommand;
+import de.boondocksulfur.christmas.cmd.XmasTabCompleter;
 import de.boondocksulfur.christmas.listener.*;
 import de.boondocksulfur.christmas.manager.*;
 import de.boondocksulfur.christmas.util.LanguageManager;
@@ -27,6 +28,7 @@ public class ChristmasSeason extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        validateConfig();
 
         // Sprachdateien extrahieren falls nicht vorhanden
         saveResourceIfAbsent("messages_de.yml");
@@ -43,6 +45,7 @@ public class ChristmasSeason extends JavaPlugin {
         this.snowmanManager    = new SnowmanManager(this);
 
         getCommand("xmas").setExecutor(new XmasCommand(this));
+        getCommand("xmas").setTabCompleter(new XmasTabCompleter());
         getCommand("xmasgift").setExecutor(new XmasGiftCommand(this));
 
         Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
@@ -95,9 +98,40 @@ public class ChristmasSeason extends JavaPlugin {
     }
     public void reloadAll() {
         reloadConfig();
+        validateConfig();
         languageManager.reload();
         stopFeatures();
         if (isActive()) startFeatures();
+    }
+
+    /**
+     * Prüft die config.yml auf typische Fehler und warnt im Log.
+     * Ungültige Einträge werden zur Laufzeit ohnehin übersprungen -
+     * ohne Warnung rätselt man aber, warum ein Item nie droppt.
+     */
+    private void validateConfig() {
+        validateMaterialList("decoration.drops");
+        validateMaterialList("gifts.lootTables.common");
+        validateMaterialList("gifts.lootTables.extra");
+        validateMaterialList("gifts.lootTables.rare");
+
+        String biomeName = getConfig().getString("biome.target", "SNOWY_PLAINS");
+        try {
+            if (org.bukkit.Registry.BIOME.get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase())) == null) {
+                getLogger().warning("config.yml: Unbekanntes Biom in biome.target: '" + biomeName + "' - es wird SNOWY_PLAINS verwendet.");
+            }
+        } catch (Exception e) {
+            getLogger().warning("config.yml: Ungültiger Biom-Name in biome.target: '" + biomeName + "' - es wird SNOWY_PLAINS verwendet.");
+        }
+    }
+
+    private void validateMaterialList(String path) {
+        for (String entry : getConfig().getStringList(path)) {
+            String matName = entry.split(":")[0];
+            if (org.bukkit.Material.matchMaterial(matName) == null) {
+                getLogger().warning("config.yml: Unbekanntes Material '" + matName + "' in " + path + " - Eintrag wird ignoriert.");
+            }
+        }
     }
 
     // Helper
