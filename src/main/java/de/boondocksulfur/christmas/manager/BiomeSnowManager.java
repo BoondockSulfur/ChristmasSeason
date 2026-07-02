@@ -167,7 +167,7 @@ public class BiomeSnowManager {
             }
 
             // PHASE 2: Verarbeite Budget aus Queue (verhindert TPS-Spikes!)
-            int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 6));
+            int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 12));
             processChunksFromQueue(w, budget);
 
         }, 40L, period);
@@ -582,7 +582,7 @@ public class BiomeSnowManager {
      * PERFORMANCE: Respektiert perTickBudget um TPS-Spikes zu vermeiden!
      */
     private void ensureAroundPlayerFolia(Player p, World w) {
-        int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 3));
+        int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 2));
         int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 12));
         org.bukkit.Location loc = p.getLocation();
         int baseCX = loc.getBlockX() >> 4;
@@ -617,7 +617,7 @@ public class BiomeSnowManager {
      * PERFORMANCE: Nur neue Chunks werden gequeued, bereits verarbeitete übersprungen
      */
     private void queueChunksAroundPlayer(Player p, World w) {
-        int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 3));
+        int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 2));
         org.bukkit.Location loc = p.getLocation();
         int baseCX = loc.getBlockX() >> 4;
         int baseCZ = loc.getBlockZ() >> 4;

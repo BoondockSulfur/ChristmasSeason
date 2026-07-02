@@ -2,6 +2,31 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.2.0] - 2026-07-02
+
+**Minor Update:** Thread-safety hardening, correct restore completion, smaller JAR and admin quality-of-life.
+
+### Fixed
+- **NPE guard for `biome.target`:** `Registry.get()` returns `null` for unknown biome names instead of throwing - an invalid config value no longer crashes chunk processing (falls back to `SNOWY_PLAINS` with a log warning)
+- **Folia thread-safety:** `trackedWichtel`/`trackedElfen`/`trackedGifts` and the language message cache are now concurrent collections; all `BiomeSnapshotDatabase` connection methods are `synchronized` (one SQLite connection, many region threads)
+- **Restore completion:** `/xmas off` now finishes only after ALL region tasks have completed (atomic counters + completion check). Failed chunks keep their snapshots in the database and are retried on the next run - no more `clearAll()` wiping unrestored chunks. Final statistics are accurate
+- **Overspawn:** spawn limits for Wichtel/Elfen/Snowmen are re-checked inside the scheduled region task
+- **Gift tracking leak:** chest locations are always removed from tracking when their lifetime expires, even if the chest was broken by players
+- **`/xmas reload`** now restarts ALL managers (gifts, wichtel, snowmen, decorations included), so new config values apply immediately
+- Debug logs no longer contain raw `§` color codes
+
+### Added
+- **Tab completion for `/xmas`** including biome names from the registry
+- **Config validation on startup/reload:** warns about unknown materials in loot tables and an invalid `biome.target`
+- **Gift chest protection:** hoppers and explosions can no longer empty/destroy gift chests (configurable via `gifts.protectChests`, default on)
+
+### Changed
+- One shared FoliaLib scheduler instance instead of eight separate ones
+- JAR size reduced from ~13.6 MB to ~5 MB (excluded unused SQLite natives: Android, FreeBSD, 32-bit, ppc64)
+- Removed ~200 lines of dead code (legacy 2D snapshot format, disabled seed-restore reference-world machinery)
+- Code defaults for `radiusChunks`/`perTickBudget` aligned with config.yml
+- Repository hygiene: `.gitattributes` (LF line endings), `.idea/` untracked
+
 ## [2.1.0] - 2025-12-25
 
 **Minor Update:** Critical Folia compatibility fixes and complete internationalization overhaul.

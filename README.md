@@ -1,4 +1,4 @@
-# ChristmasSeason v2.1 🎄
+# ChristmasSeason v2.2 🎄
 
 **Transform your Minecraft world into a winter wonderland!**
 
@@ -52,7 +52,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.1.0.jar`
+1. **Download:** Get `ChristmasSeason-2.2.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Spigot/Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
