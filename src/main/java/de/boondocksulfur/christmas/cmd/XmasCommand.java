@@ -125,12 +125,11 @@ public class XmasCommand implements CommandExecutor {
                         sender.sendMessage(lang.getMessage("command.biome.set.success", changed));
                     }
                     case "restore" -> {
+                        // Seed-Restore wurde entfernt (Server-Freeze durch Referenzwelt-Laden).
+                        // Restore läuft ausschließlich über '/xmas off' (SQLite-Snapshot).
                         sender.sendMessage("§c§lWARNUNG: Dieser Befehl wurde deaktiviert!");
                         sender.sendMessage("§7Er kann den Server zum Absturz bringen.");
                         sender.sendMessage("§7Verwende stattdessen '/xmas off' zum Zurücksetzen.");
-                        // DISABLED: Causes server freeze by loading reference world chunks
-                        // int changed = plugin.getBiomeSnowManager().restoreSeedForLoaded();
-                        // sender.sendMessage(lang.getMessage("command.biome.restore.success", changed));
                     }
                     case "clearsnap" -> {
                         plugin.getBiomeSnowManager().clearSnapshot();

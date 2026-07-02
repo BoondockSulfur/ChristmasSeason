@@ -11,8 +11,6 @@ import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -69,9 +67,6 @@ public class BiomeSnowManager {
     // RETRY MECHANISM: Tracking für nicht-geladene Chunks (versuche sie später nochmal)
     private final java.util.Map<ChunkKey, Integer> chunkRetryCount = new java.util.concurrent.ConcurrentHashMap<>();
     private static final int MAX_CHUNK_RETRIES = 3; // Nach 3 Versuchen aufgeben
-
-    // ---------- Seed-Ref ----------
-    private World refWorld;
 
     // ===================== Lifecycle ======================
     public void start() {
@@ -146,8 +141,6 @@ public class BiomeSnowManager {
         } else if (db != null) {
             plugin.debug("Datenbank bleibt offen für Restore");
         }
-
-        unloadRefWorld();
     }
 
     // ===================== Public Controls ======================
@@ -235,18 +228,9 @@ public class BiomeSnowManager {
         processChunkAt(w, c.getX(), c.getZ());
     }
 
-    /** Seed-Restore für alle geladenen Chunks (entspricht /xmas biome restore) */
-    public int restoreSeedForLoaded() {
-        World target = Bukkit.getWorld(plugin.getConfig().getString("snowWorld", "world"));
-        if (target == null) return 0;
-        World ref = getOrCreateRefWorld();
-        int changed = 0;
-        for (Chunk c : target.getLoadedChunks()) {
-            if (!c.isLoaded()) continue;
-            if (restoreChunkFromRef(target, ref, c)) changed++;
-        }
-        return changed;
-    }
+    // ENTFERNT: restoreSeedForLoaded() - der Befehl '/xmas biome restore' wurde
+    // deaktiviert (Server-Freeze durch Referenzwelt-Laden); Restore läuft über
+    // den SQLite-Snapshot (restoreALLAsync)
 
     /** Snapshot vollständig und asynchron zurückspielen (für /xmas off) */
     public void restoreALLAsync(int perTick) {
@@ -1022,66 +1006,8 @@ public class BiomeSnowManager {
         } catch (Throwable ignored) {}
     }
 
-    /** schreibt Biome eines Chunks anhand der Referenzwelt (Seed) zurück */
-    private boolean restoreChunkFromRef(World targetWorld, World refWorld, Chunk targetChunk) {
-        boolean modified = false;
-        int cx = targetChunk.getX(), cz = targetChunk.getZ();
-        refWorld.getChunkAt(cx, cz); // sicherstellen, dass Referenzchunk generiert
-
-        int minY = targetWorld.getMinHeight(), maxY = targetWorld.getMaxHeight();
-        int step = getVerticalStep();
-        int bx = cx << 4, bz = cz << 4;
-
-        for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
-            Biome refBiome = refWorld.getBiome(bx + x, 64, bz + z);
-            for (int y = minY; y < maxY; y += step) {
-                if (targetWorld.getBiome(bx + x, y, bz + z) != refBiome) {
-                    targetWorld.setBiome(bx + x, y, bz + z, refBiome);
-                    modified = true;
-                }
-            }
-        }
-        if (modified) refreshChunkSafe(targetWorld, targetChunk);
-        return modified;
-    }
-
-    /** Referenzwelt aus gleichem Seed (Reflection, keine direkte Abhängigkeit) */
-    private World getOrCreateRefWorld() {
-        if (refWorld != null && Bukkit.getWorld(refWorld.getName()) != null) return refWorld;
-
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
-        World main = Bukkit.getWorld(worldName);
-        if (main == null) throw new IllegalStateException("Target world not found: " + worldName);
-
-        String refName = worldName + "_xmas_ref";
-        World existing = Bukkit.getWorld(refName);
-        if (existing != null) { refWorld = existing; return refWorld; }
-
-        try {
-            Class<?> wcClazz = Class.forName("org.bukkit.WorldCreator");
-            Constructor<?> ctor = wcClazz.getConstructor(String.class);
-            Object wc = ctor.newInstance(refName);
-
-            try { wcClazz.getMethod("seed", long.class).invoke(wc, main.getSeed()); } catch (Throwable ignored) {}
-            try { wcClazz.getMethod("environment", World.Environment.class).invoke(wc, main.getEnvironment()); } catch (Throwable ignored) {}
-
-            Method createWorld = Bukkit.getServer().getClass().getMethod("createWorld", wcClazz);
-            refWorld = (World) createWorld.invoke(Bukkit.getServer(), wc);
-
-            try { refWorld.setAutoSave(false); } catch (Throwable ignored) {}
-            try { refWorld.getClass().getMethod("setKeepSpawnLoaded", boolean.class).invoke(refWorld, false); } catch (Throwable ignored) {}
-            try { refWorld.getClass().getMethod("setKeepSpawnInMemory", boolean.class).invoke(refWorld, false); } catch (Throwable ignored) {}
-            return refWorld;
-        } catch (Exception e) {
-            throw new IllegalStateException("Could not create reference world via reflection", e);
-        }
-    }
-
-    private void unloadRefWorld() {
-        if (refWorld == null) return;
-        try { Bukkit.unloadWorld(refWorld, false); } catch (Throwable ignored) {}
-        refWorld = null;
-    }
+    // ENTFERNT: restoreChunkFromRef()/getOrCreateRefWorld()/unloadRefWorld() -
+    // gehörten zum deaktivierten Seed-Restore ('/xmas biome restore')
 
     /**
      * Manueller Set-Befehl für problematische Stellen
