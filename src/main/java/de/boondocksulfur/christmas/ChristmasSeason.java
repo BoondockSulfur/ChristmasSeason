@@ -49,6 +49,7 @@ public class ChristmasSeason extends JavaPlugin {
         getCommand("xmasgift").setExecutor(new XmasGiftCommand(this));
 
         Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new GiftProtectionListener(this), this);
         Bukkit.getPluginManager().registerEvents(new WichtelTargetBlocker(), this);
         Bukkit.getPluginManager().registerEvents(new SnowmanDamageListener(), this);
         Bukkit.getPluginManager().registerEvents(new MobProtectionListener(), this);

@@ -52,6 +52,7 @@ gifts:
   chancePerInterval: 0.35
   lifetimeSeconds: 300
   broadcastOnSpawn: true
+  protectChests: true     # Geschenk-Kisten vor Hoppern und Explosionen schützen
   lootTables:
     common:
       - COOKIE:8

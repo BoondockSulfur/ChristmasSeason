@@ -94,6 +94,14 @@ public class GiftManager {
         }
     }
 
+    /**
+     * Prüft, ob an dieser Position eine getrackte Geschenk-Kiste steht.
+     * Wird vom GiftProtectionListener genutzt (Hopper-/Explosionsschutz).
+     */
+    public boolean isGiftChest(Location loc) {
+        return loc != null && trackedGifts.contains(loc);
+    }
+
     /** Entfernt alle Geschenk-Chests aus der Welt */
     public void cleanup() {
         int removed = 0;
