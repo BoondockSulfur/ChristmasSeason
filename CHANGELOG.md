@@ -2,86 +2,66 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
-## [2.4.0] - 2026-07-03
-
-**Feature Update:** Merges the April feature line (region protection, backup system, update checker, bStats) into the hardened 2.3.0 codebase.
-
-This release unifies two development lines: the WorldGuard/GriefPrevention + backup feature work (developed April 2026) and the thread-safety/26.x/Adventure overhaul from 2.2.0-2.3.0. All features were re-integrated on top of the hardened codebase and re-verified live.
-
-### Added
-- **Region protection** (soft dependency, reflection-based - no hard plugin requirement): gifts, decorations, Wichtel, Elfen and Snowmen no longer spawn inside WorldGuard regions or GriefPrevention claims (configurable via `regionIntegration` in config.yml)
-- **Backup system** for the biome snapshot database: automatic SAFE backup on `/xmas on`, timestamp backup on `/xmas off`, emergency backup when the server stops while the event is active; managed via `/xmas backup <list|restore|create|clear>`
-- **Startup safety checks**: database integrity check (PRAGMA integrity_check), warning when active without a snapshot DB, detection of emergency backups from a previous crash
-- **Update checker** (`/xmas update check` + console notice + admin join notification) querying Modrinth and GitHub
-- **Biome compare/repair tools**: `/xmas biome compare <backup>` and `/xmas biome fix-diff <backup> confirm`
-- **bStats metrics** (plugin ID 30930, relocated)
-- **Command guards**: `/xmas on` is blocked while a restore is running; `/xmas biome clearsnap` refuses to delete the snapshot while the event is active or no backup exists
-- Snowmen now use a stricter spawn check and never spawn in/near water (they would melt)
-- SpawnUtil improvements: no spawns above Y=100 (roofs/trees/mountains), stricter sky-light check
-
-### Fixed
-- Snowstorm auto-mode toggle chain now stops reliably on `/xmas off` (no orphaned weather toggles)
-- Corrupt snapshot data is detected at the header level instead of causing an OutOfMemoryError
-
 ## [2.3.0] - 2026-07-03
 
-**Minor Update:** Minecraft 26.x support.
+**Major Update:** Minecraft 26.x support, full Adventure API migration, and a deep thread-safety/reliability overhaul of the entire 2.2.0 feature set.
 
-One JAR now covers Minecraft 1.21.x **and** the year-based 26.x versions (`api-version: "1.21"` remains the minimum).
-
-### Changed
-- Compiled against Paper API `26.1.2.build.72-stable` (Paper's new `<mc>.build.N-stable` artifact scheme; replaces `1.21.3-R0.1-SNAPSHOT`)
-- Bytecode stays at Java 21, so the plugin runs on Java 21 (1.21.x servers) and Java 25 (26.x servers)
-
-### Changed (Adventure API migration)
-- Entity/item/chest names now use Paper's Component API (`customName`/`displayName`) instead of the deprecated `setCustomName`/`setDisplayName`
-- Gift broadcast uses `Bukkit.broadcast(Component)` instead of deprecated `broadcastMessage`
-- `Registry.BIOME` replaced by the modern `RegistryAccess` API (new `Registries` util)
-- Snowball marker is now a scoreboard tag (`XMAS_SNOWBALL`) instead of a custom name (the name was never read anywhere)
-- `ChatColor` fully replaced by Adventure serializers; language files normalized to `&` color codes (parser stays tolerant of old extracted files with `§`)
-- Zero deprecation warnings left in the build
+**Upgrade Priority:** HIGH - contains critical Folia fixes and data-safety hardening
 
 ### Added
-- **Orphaned mob cleanup:** event mobs whose chunks were unloaded during `/xmas off` (cleanup only reaches loaded entities) are now removed when their chunks load while the event is inactive - previously they stayed in the world forever
+- **Minecraft 26.x support** - one JAR covers 1.21.3-1.21.11 (Java 21) AND the year-based 26.x versions (Java 25); compiled against Paper API `26.1.2.build.72-stable`, `api-version: "1.21"` remains the minimum
+- **Gift chest protection** - hoppers and explosions can no longer empty/destroy gift chests; gift chests carry a PersistentDataContainer marker so cleanup can never delete player chests (configurable via `gifts.protectChests`)
+- **Orphaned mob cleanup** - event mobs whose chunks were unloaded during `/xmas off` are removed automatically when their chunks load while the event is inactive
+- **Config validation on startup/reload** - warns about unknown materials in loot tables and an invalid `biome.target`
+- Tab completion for `/xmas` now includes biome names from the registry
 
-### Fixed
-- Literal `&` in messages is no longer mangled into `§` ("Wichtel & Elfen" was logged as "Wichtel § Elfen") - only valid color codes like `&6` are translated
-- Console log messages (`log.*` keys) no longer contain raw `§` color codes
-- **Restore lifecycle hardening** (found in pre-release review): `/xmas off` twice no longer starts two competing restores; `/xmas on` during a running restore no longer leaks the new database (which silently disabled snapshotting for the whole season); a scheduling failure mid-restore no longer leaves the completion hanging with an open database
-- **Folia: killed event mobs no longer clog the spawn caps** - entity-scheduler tasks are *retired* on Folia when the entity dies, so cleanup now runs via retired-callbacks; previously, after `maxPerWorld` mobs were killed by players, no new Wichtel/Elfen/Snowmen would ever spawn until `/xmas off` (verified with kill-wave test on Folia 1.21.11)
-- **Gift chests can no longer delete player chests**: gift chests carry a PersistentDataContainer marker; the lifetime task and cleanup only remove chests with that marker, and pending lifetime tasks are cancelled on stop
-- Language reload race fixed (a region thread could re-cache a message in the old language during `/xmas reload`)
+### Changed
+- **Full Adventure API migration** - Component-based entity/item/chest names and broadcasts, `RegistryAccess` instead of `Registry.BIOME`, zero deprecated API usage in the build
+- **Reliable `/xmas off` restore** - completion is tracked per chunk (atomic counters); failed chunks keep their snapshots and are retried on the next run; accurate final statistics; reentrancy guard against double `/xmas off`; `/xmas on` during a running restore can no longer leak the database
+- **Folia hardening of the 2.2.0 feature line** - all entity-scheduler tasks use retired-callbacks (killed event mobs no longer clog the spawn caps), one shared FoliaLib instance, spawn limits re-checked inside region tasks
+- JAR size reduced from ~13.6 MB to ~5 MB (excluded unused SQLite natives)
+- `/xmas reload` restarts ALL managers, so new config values apply immediately
+- Language files normalized to `&` color codes; literal `&` ("Wichtel & Elfen") no longer mangled; console logs free of raw color codes
+- Removed ~200 lines of dead code (legacy 2D snapshot format, disabled seed-restore machinery)
 
-### Compatibility note
-- Minimum is Minecraft **1.21.3** - on 1.21.1/1.21.2 the plugin fails with `IncompatibleClassChangeError` because `Biome` changed from enum to interface in 1.21.3 (this was already true for 2.x builds compiled against the 1.21.3 API; now verified and documented)
+### Compatibility
+- **Paper/Purpur/Folia only** - plain Spigot is no longer supported (Adventure API required)
+- **Minimum is Minecraft 1.21.3** - on 1.21.1/1.21.2 the plugin fails with `IncompatibleClassChangeError` (Biome changed from enum to interface in 1.21.3)
 
 ### Verified
-- Boot- and function-tested (`/xmas on` → `status` → `/xmas off`) on Paper **26.2** (Java 25) and Paper **1.21.11** with the identical JAR - zero exceptions, SQLite natives, biome database and weather control all working on both
+- Live function tests on Paper 26.2 (Java 25), Paper 1.21.11 and Folia 1.21.11 with bot-driven end-to-end runs: biome bubble, 180-208-chunk restores without errors, backup commands, kill-wave spawn-cap test - zero exceptions
 
-## [2.2.0] - 2026-07-02
+## [2.2.0] - 2026-04-25
 
-**Minor Update:** Thread-safety hardening, correct restore completion, smaller JAR and admin quality-of-life.
+**Major Update:** Region protection, backup system, update checker, bug fixes, data safety, tab completion, and bStats.
 
-### Fixed
-- **NPE guard for `biome.target`:** `Registry.get()` returns `null` for unknown biome names instead of throwing - an invalid config value no longer crashes chunk processing (falls back to `SNOWY_PLAINS` with a log warning)
-- **Folia thread-safety:** `trackedWichtel`/`trackedElfen`/`trackedGifts` and the language message cache are now concurrent collections; all `BiomeSnapshotDatabase` connection methods are `synchronized` (one SQLite connection, many region threads)
-- **Restore completion:** `/xmas off` now finishes only after ALL region tasks have completed (atomic counters + completion check). Failed chunks keep their snapshots in the database and are retried on the next run - no more `clearAll()` wiping unrestored chunks. Final statistics are accurate
-- **Overspawn:** spawn limits for Wichtel/Elfen/Snowmen are re-checked inside the scheduled region task
-- **Gift tracking leak:** chest locations are always removed from tracking when their lifetime expires, even if the chest was broken by players
-- **`/xmas reload`** now restarts ALL managers (gifts, wichtel, snowmen, decorations included), so new config values apply immediately
-- Debug logs no longer contain raw `§` color codes
+**Upgrade Priority:** HIGH - Critical thread-safety and data integrity fixes
 
 ### Added
-- **Tab completion for `/xmas`** including biome names from the registry
-- **Config validation on startup/reload:** warns about unknown materials in loot tables and an invalid `biome.target`
-- **Gift chest protection:** hoppers and explosions can no longer empty/destroy gift chests (configurable via `gifts.protectChests`, default on)
+- **WorldGuard & GriefPrevention** - No spawns in protected regions/claims (soft dependency, configurable)
+- **Automatic Backup System** - SAFE/Timestamp/Emergency backups in `world/christmas_backups/`
+- **Update Checker** - Modrinth + GitHub fallback, OP notifications on join
+- **Biome Compare & Fix** - `/xmas biome compare` and `/xmas biome fix-diff` for recovery
+- **Full Tab Completion** - Context-aware suggestions for all commands
+- **bStats Metrics** (Plugin ID: 30930)
+- **Startup Safety Checks** - DB integrity check, crash detection, missing-DB warnings
+- **Data Loss Protection** - `clearsnap` blocked when active, backup failure warnings, smart rotation
+- Entity spawn fixes: No more spawns on roofs, in trees, or in water
+
+### Fixed (17 Bugs)
+- **CRITICAL:** Backup system non-functional (wrong DB filename)
+- **CRITICAL:** Folia crash on start/join (`Bukkit.getScheduler()` → `FoliaSchedulerHelper`)
+- **HIGH:** 6 thread-safety issues (restore counters, restore guard, HashSets, SQLite, LanguageManager)
+- **HIGH:** Restore permanently blocked after empty snapshot or null DB
+- **MEDIUM:** Cave biomes overwritten during seed-restore (Y=64 only → per Y-level)
+- **MEDIUM:** NPE in `stopFeatures()` on failed startup
+- **MEDIUM:** SnowstormManager orphaned tasks after `stop()`
+- **LOW:** DB header EOF check, version parse fix, SnowmanDamageListener cleanup
 
 ### Changed
-- One shared FoliaLib scheduler instance instead of eight separate ones
-- JAR size reduced from ~13.6 MB to ~5 MB (excluded unused SQLite natives: Android, FreeBSD, 32-bit, ppc64)
-- Removed ~200 lines of dead code (legacy 2D snapshot format, disabled seed-restore reference-world machinery)
-- Code defaults for `radiusChunks`/`perTickBudget` aligned with config.yml
-- Repository hygiene: `.gitattributes` (LF line endings), `.idea/` untracked
+- `softdepend: [WorldGuard, GriefPrevention]` in plugin.yml
+- New `regionIntegration` config section
+- Intelligent backup rotation (largest backup never deleted)
 
 ## [2.1.0] - 2025-12-25
 

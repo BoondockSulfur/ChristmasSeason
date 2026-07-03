@@ -1,4 +1,4 @@
-# ChristmasSeason v2.4 🎄
+# ChristmasSeason v2.3 🎄
 
 **Transform your Minecraft world into a winter wonderland!**
 
@@ -27,7 +27,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **Elves:** Friendly NPCs that wander around
 - **Snowmen:** Aggressive snow golems that throw snowballs
 
-### 🛡️ Protection & Safety (v2.4.0)
+### 🛡️ Protection & Safety
 - **Region Protection:** No spawns in WorldGuard regions or GriefPrevention claims (soft dependency)
 - **Backup System:** Automatic SAFE/timestamp/emergency backups of the biome database
 - **Startup Safety Checks:** DB integrity check, crash detection via emergency backups
@@ -59,7 +59,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.4.0.jar`
+1. **Download:** Get `ChristmasSeason-2.3.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
