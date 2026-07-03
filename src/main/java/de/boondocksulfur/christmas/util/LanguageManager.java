@@ -1,5 +1,8 @@
 package de.boondocksulfur.christmas.util;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.configuration.file.YamlConfiguration;
 import de.boondocksulfur.christmas.ChristmasSeason;
 
@@ -104,14 +107,20 @@ public class LanguageManager {
                     return "§c[Missing: " + key + "]";
                 }
             }
-            // Farbcodes konvertieren - NUR gültige Codes wie '&6', literale
-            // '&' (z.B. "Wichtel & Elfen") bleiben erhalten!
-            message = org.bukkit.ChatColor.translateAlternateColorCodes('&', message);
+            // Toleranz für alte, bereits extrahierte Sprachdateien auf Servern,
+            // die noch rohe '§'-Codes enthalten (Konvention ist '&')
+            message = message.replace('§', '&');
 
-            // 'log.*'-Keys landen ausschließlich im Server-Log, wo §-Codes
-            // nicht gerendert werden - Farben dort direkt entfernen
+            // Farbcodes via Adventure konvertieren - NUR gültige Codes wie '&6',
+            // literale '&' (z.B. "Wichtel & Elfen") bleiben erhalten!
+            Component parsed = LegacyComponentSerializer.legacyAmpersand().deserialize(message);
+
             if (key.startsWith("log.")) {
-                message = org.bukkit.ChatColor.stripColor(message);
+                // 'log.*'-Keys landen ausschließlich im Server-Log, wo Farbcodes
+                // nicht gerendert werden - dort direkt als Klartext
+                message = PlainTextComponentSerializer.plainText().serialize(parsed);
+            } else {
+                message = LegacyComponentSerializer.legacySection().serialize(parsed);
             }
 
             cache.put(key, message);
@@ -131,6 +140,24 @@ public class LanguageManager {
      */
     public String get(String key) {
         return getMessage(key);
+    }
+
+    /**
+     * Holt eine Nachricht als Adventure-Component (für customName,
+     * displayName, Broadcasts - die modernen Paper-APIs)
+     */
+    public Component getComponent(String key, Object... replacements) {
+        return LegacyComponentSerializer.legacySection().deserialize(getMessage(key, replacements));
+    }
+
+    /**
+     * Entfernt Legacy-Farbcodes aus einem String (Adventure-Ersatz für
+     * das deprecated ChatColor.stripColor)
+     */
+    public static String stripColors(String legacy) {
+        if (legacy == null || legacy.indexOf('§') < 0) return legacy;
+        return PlainTextComponentSerializer.plainText().serialize(
+                LegacyComponentSerializer.legacySection().deserialize(legacy));
     }
 
     /**

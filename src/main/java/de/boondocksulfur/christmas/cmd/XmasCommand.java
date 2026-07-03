@@ -111,7 +111,7 @@ public class XmasCommand implements CommandExecutor {
                         org.bukkit.block.Biome target;
                         try {
                             // Use Registry instead of deprecated valueOf
-                            target = org.bukkit.Registry.BIOME.get(org.bukkit.NamespacedKey.minecraft(args[2].toLowerCase()));
+                            target = de.boondocksulfur.christmas.util.Registries.biomes().get(org.bukkit.NamespacedKey.minecraft(args[2].toLowerCase()));
                             if (target == null) throw new IllegalArgumentException();
                         }
                         catch (Exception ex) { sender.sendMessage(lang.get("command.biome.set.unknown-biome")); return true; }

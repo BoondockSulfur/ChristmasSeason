@@ -152,7 +152,7 @@ public class GiftManager {
         if (!(state instanceof Chest)) return;
         Chest chest = (Chest) state;
 
-        chest.setCustomName(lang.get("entity.gift-chest"));
+        chest.customName(lang.getComponent("entity.gift-chest"));
         chest.update();
 
         fillGiftInventory(chest.getBlockInventory());
@@ -173,7 +173,7 @@ public class GiftManager {
         }, lifetime * 20L);
 
         if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true)) {
-            Bukkit.broadcastMessage(lang.getMessage("broadcast.gift-spawned",
+            Bukkit.broadcast(lang.getComponent("broadcast.gift-spawned",
                     w.getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
         }
     }

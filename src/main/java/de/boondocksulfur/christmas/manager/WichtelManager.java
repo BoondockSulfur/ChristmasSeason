@@ -201,8 +201,8 @@ public class WichtelManager {
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 
             Zombie z = (Zombie) w.spawnEntity(spawn, EntityType.ZOMBIE);
-            z.setBaby(true);
-            z.setCustomName(lang.get("entity.wichtel"));
+            z.setBaby();
+            z.customName(lang.getComponent("entity.wichtel"));
             z.setCustomNameVisible(true);
             z.setRemoveWhenFarAway(false);
             z.getScoreboardTags().add(TAG_WICHTEL);
@@ -252,7 +252,7 @@ public class WichtelManager {
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 
             Allay a = (Allay) w.spawnEntity(spawn, EntityType.ALLAY);
-            a.setCustomName(lang.get("entity.elf"));
+            a.customName(lang.getComponent("entity.elf"));
             a.setCustomNameVisible(true);
             a.setRemoveWhenFarAway(false);
             a.setCanPickupItems(true);

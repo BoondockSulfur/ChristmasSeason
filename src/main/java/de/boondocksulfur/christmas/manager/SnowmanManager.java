@@ -159,7 +159,7 @@ public class SnowmanManager {
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 
             Snowman sm = w.spawn(loc, Snowman.class);
-            sm.setCustomName(lang.get("entity.snowman"));
+            sm.customName(lang.getComponent("entity.snowman"));
             sm.setCustomNameVisible(true);
             sm.getScoreboardTags().add(TAG);
             sm.setDerp(false);
@@ -220,8 +220,10 @@ public class SnowmanManager {
             direction.normalize().multiply(1.1);
 
             // Schneeball abfeuern
+            // Marker als Scoreboard-Tag statt deprecated setCustomName -
+            // der Name wurde nirgends gelesen, Tags sind die saubere Kennung
             Snowball ball = snowman.launchProjectile(Snowball.class);
-            ball.setCustomName("XMAS_SNOWBALL");
+            ball.addScoreboardTag("XMAS_SNOWBALL");
             ball.setVelocity(direction);
 
         }, 60L, attackInterval * 20L);

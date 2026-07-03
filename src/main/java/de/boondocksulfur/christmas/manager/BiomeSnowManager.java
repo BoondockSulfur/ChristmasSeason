@@ -738,7 +738,7 @@ public class BiomeSnowManager {
             // Use key-based API instead of deprecated valueOf
             // WICHTIG: Registry.get() wirft KEINE Exception bei unbekanntem Namen,
             // sondern gibt null zurück → expliziter Null-Check nötig!
-            Biome biome = org.bukkit.Registry.BIOME.get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase()));
+            Biome biome = de.boondocksulfur.christmas.util.Registries.biomes().get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase()));
             if (biome == null) {
                 plugin.getLogger().warning("Unbekanntes Biom in config.yml (biome.target): '" + biomeName + "' - Fallback auf SNOWY_PLAINS");
                 return Biome.SNOWY_PLAINS;

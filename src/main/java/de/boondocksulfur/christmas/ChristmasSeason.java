@@ -50,6 +50,7 @@ public class ChristmasSeason extends JavaPlugin {
 
         Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
         Bukkit.getPluginManager().registerEvents(new GiftProtectionListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new OrphanedMobCleanupListener(this), this);
         Bukkit.getPluginManager().registerEvents(new WichtelTargetBlocker(), this);
         Bukkit.getPluginManager().registerEvents(new SnowmanDamageListener(), this);
         Bukkit.getPluginManager().registerEvents(new MobProtectionListener(), this);
@@ -118,7 +119,7 @@ public class ChristmasSeason extends JavaPlugin {
 
         String biomeName = getConfig().getString("biome.target", "SNOWY_PLAINS");
         try {
-            if (org.bukkit.Registry.BIOME.get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase())) == null) {
+            if (de.boondocksulfur.christmas.util.Registries.biomes().get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase())) == null) {
                 getLogger().warning("config.yml: Unbekanntes Biom in biome.target: '" + biomeName + "' - es wird SNOWY_PLAINS verwendet.");
             }
         } catch (Exception e) {
@@ -182,7 +183,7 @@ public class ChristmasSeason extends JavaPlugin {
     /** Debug-Log: Nur ausgeben wenn Debug-Modus aktiv */
     public void debug(String message) {
         if (debugMode) {
-            getLogger().info("[DEBUG] " + org.bukkit.ChatColor.stripColor(message));
+            getLogger().info("[DEBUG] " + LanguageManager.stripColors(message));
         }
     }
 
@@ -190,14 +191,14 @@ public class ChristmasSeason extends JavaPlugin {
     public void debugLang(String key, Object... replacements) {
         if (debugMode) {
             String message = languageManager.getMessage(key, replacements);
-            getLogger().info("[DEBUG] " + org.bukkit.ChatColor.stripColor(message));
+            getLogger().info("[DEBUG] " + LanguageManager.stripColors(message));
         }
     }
 
     /** Verbose Debug-Log: Nur ausgeben wenn Verbose-Debug-Modus aktiv */
     public void verboseDebug(String message) {
         if (verboseDebugMode) {
-            getLogger().info("[VERBOSE] " + org.bukkit.ChatColor.stripColor(message));
+            getLogger().info("[VERBOSE] " + LanguageManager.stripColors(message));
         }
     }
 
@@ -205,7 +206,7 @@ public class ChristmasSeason extends JavaPlugin {
     public void verboseDebugLang(String key, Object... replacements) {
         if (verboseDebugMode) {
             String message = languageManager.getMessage(key, replacements);
-            getLogger().info("[VERBOSE] " + org.bukkit.ChatColor.stripColor(message));
+            getLogger().info("[VERBOSE] " + LanguageManager.stripColors(message));
         }
     }
 }

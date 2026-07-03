@@ -387,7 +387,7 @@ public class BiomeSnapshotDatabase {
 
                             try {
                                 // Use Registry instead of deprecated valueOf
-                                Biome biome = org.bukkit.Registry.BIOME.get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase()));
+                                Biome biome = de.boondocksulfur.christmas.util.Registries.biomes().get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase()));
                                 if (biome == null) {
                                     plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.database.unknown-3d-biome", biomeName));
                                     biomes[y][x][z] = Biome.PLAINS;
@@ -406,7 +406,7 @@ public class BiomeSnapshotDatabase {
                 // ALTES FORMAT: Ordinal-basiert (instabil - nur für Kompatibilität)
                 plugin.getLogger().warning(plugin.getLanguageManager().get("log.database.old-format-warning"));
                 // Use Registry stream instead of deprecated values()
-                Biome[] allBiomes = org.bukkit.Registry.BIOME.stream().toArray(Biome[]::new);
+                Biome[] allBiomes = de.boondocksulfur.christmas.util.Registries.biomes().stream().toArray(Biome[]::new);
 
                 for (int y = 0; y < yLayers; y++) {
                     for (int x = 0; x < 16; x++) {

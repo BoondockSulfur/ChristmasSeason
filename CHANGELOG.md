@@ -12,9 +12,23 @@ One JAR now covers Minecraft 1.21.x **and** the year-based 26.x versions (`api-v
 - Compiled against Paper API `26.1.2.build.72-stable` (Paper's new `<mc>.build.N-stable` artifact scheme; replaces `1.21.3-R0.1-SNAPSHOT`)
 - Bytecode stays at Java 21, so the plugin runs on Java 21 (1.21.x servers) and Java 25 (26.x servers)
 
+### Changed (Adventure API migration)
+- Entity/item/chest names now use Paper's Component API (`customName`/`displayName`) instead of the deprecated `setCustomName`/`setDisplayName`
+- Gift broadcast uses `Bukkit.broadcast(Component)` instead of deprecated `broadcastMessage`
+- `Registry.BIOME` replaced by the modern `RegistryAccess` API (new `Registries` util)
+- Snowball marker is now a scoreboard tag (`XMAS_SNOWBALL`) instead of a custom name (the name was never read anywhere)
+- `ChatColor` fully replaced by Adventure serializers; language files normalized to `&` color codes (parser stays tolerant of old extracted files with `§`)
+- Zero deprecation warnings left in the build
+
+### Added
+- **Orphaned mob cleanup:** event mobs whose chunks were unloaded during `/xmas off` (cleanup only reaches loaded entities) are now removed when their chunks load while the event is inactive - previously they stayed in the world forever
+
 ### Fixed
 - Literal `&` in messages is no longer mangled into `§` ("Wichtel & Elfen" was logged as "Wichtel § Elfen") - only valid color codes like `&6` are translated
 - Console log messages (`log.*` keys) no longer contain raw `§` color codes
+
+### Compatibility note
+- Minimum is Minecraft **1.21.3** - on 1.21.1/1.21.2 the plugin fails with `IncompatibleClassChangeError` because `Biome` changed from enum to interface in 1.21.3 (this was already true for 2.x builds compiled against the 1.21.3 API; now verified and documented)
 
 ### Verified
 - Boot- and function-tested (`/xmas on` → `status` → `/xmas off`) on Paper **26.2** (Java 25) and Paper **1.21.11** with the identical JAR - zero exceptions, SQLite natives, biome database and weather control all working on both

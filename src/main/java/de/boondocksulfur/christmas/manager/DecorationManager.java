@@ -151,12 +151,12 @@ public class DecorationManager {
             if (split.length > 1) try { amount = Integer.parseInt(split[1]); } catch (NumberFormatException ignored) {}
 
             ItemStack stack = new ItemStack(mat, amount);
-            String name = lang.get("entity.decoration");
+            net.kyori.adventure.text.Component name = lang.getComponent("entity.decoration");
             ItemMeta meta = stack.getItemMeta();
-            if (meta != null) { meta.setDisplayName(name); stack.setItemMeta(meta); }
+            if (meta != null) { meta.displayName(name); stack.setItemMeta(meta); }
 
             Item item = w.dropItem(place, stack);
-            item.setCustomName(name);
+            item.customName(name);
             item.setCustomNameVisible(true);
             item.setPickupDelay(plugin.getConfig().getInt("decoration.pickupDelayTicks", 0));
             try { item.setGlowing(plugin.getConfig().getBoolean("decoration.glow", true)); } catch (Throwable ignored) {}

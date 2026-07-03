@@ -35,7 +35,7 @@ public class XmasTabCompleter implements TabCompleter {
         }
 
         if (args.length == 3 && args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("set")) {
-            List<String> biomes = org.bukkit.Registry.BIOME.stream()
+            List<String> biomes = de.boondocksulfur.christmas.util.Registries.biomes().stream()
                     .map(b -> b.getKey().getKey())
                     .sorted()
                     .toList();

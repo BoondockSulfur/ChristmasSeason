@@ -59,7 +59,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 5. **Activation:** `/xmas on` - Done! 🎄
 
 **Requirements:**
-- Minecraft 1.21.x or 26.x (or Folia 1.20+)
+- Minecraft 1.21.3+ or 26.x (Paper/Purpur/Folia); NOT 1.21.1/1.21.2 (Biome enum/interface change)
 - Java 21+ (Minecraft 26.x servers require Java 25+)
 - Spigot/Paper/Purpur/Folia Server
 
