@@ -94,6 +94,20 @@ elves:
   spawnIntervalSeconds: 60
   maxPerWorld: 4
 
+# Region Protection (WorldGuard & GriefPrevention)
+# Verhindert Spawns in geschützten Bereichen/Claims (Soft-Dependency)
+regionIntegration:
+  enabled: true
+
+  # WorldGuard Settings
+  worldGuard:
+    allowInProtected: false   # true = Spawns in WG-Regionen erlauben
+
+  # GriefPrevention Settings
+  griefPrevention:
+    allowInClaims: false      # true = Spawns in Claims erlauben
+    allowInAdminClaims: false # true = Spawns in Admin-Claims erlauben
+
 snowmen:
   enabled: true
   spawnIntervalSeconds: 45

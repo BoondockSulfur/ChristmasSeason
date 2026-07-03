@@ -163,6 +163,13 @@ public class GiftManager {
         scheduler.runAtLocation(playerLoc, () -> {
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 8, 5);
+
+            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(loc)) {
+                plugin.debug("Gift spawn blocked by region protection at " + loc.getBlockX() + "," + loc.getBlockZ());
+                return;
+            }
+
             spawnGift(w, loc);
         });
     }

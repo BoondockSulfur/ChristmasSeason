@@ -5,7 +5,7 @@
 
     <groupId>de.boondocksulfur</groupId>
     <artifactId>christmas-season</artifactId>
-    <version>2.3.0</version>
+    <version>2.4.0</version>
     <name>ChristmasSeason</name>
 
     <properties>
@@ -41,6 +41,14 @@
             <groupId>com.tcoded</groupId>
             <artifactId>FoliaLib</artifactId>
             <version>0.4.3</version>
+        </dependency>
+
+        <!-- bStats Metrics (shaded + relocated) -->
+        <dependency>
+            <groupId>org.bstats</groupId>
+            <artifactId>bstats-bukkit</artifactId>
+            <version>3.1.0</version>
+            <scope>compile</scope>
         </dependency>
 
         <!-- SQLite JDBC Driver für Biome-Snapshot Datenbank -->
@@ -90,11 +98,17 @@
                                     <pattern>com.tcoded.folialib</pattern>
                                     <shadedPattern>de.boondocksulfur.christmas.libs.folialib</shadedPattern>
                                 </relocation>
+                                <relocation>
+                                    <pattern>org.bstats</pattern>
+                                    <shadedPattern>de.boondocksulfur.christmas.libs.bstats</shadedPattern>
+                                </relocation>
                             </relocations>
                             <artifactSet>
                                 <includes>
                                     <include>org.xerial:sqlite-jdbc</include>
                                     <include>com.tcoded:FoliaLib</include>
+                                    <include>org.bstats:bstats-bukkit</include>
+                                    <include>org.bstats:bstats-base</include>
                                 </includes>
                             </artifactSet>
                             <!-- JAR-Größe: exotische SQLite-Natives ausschließen (Android, FreeBSD,

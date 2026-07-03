@@ -20,6 +20,10 @@ public class ChristmasSeason extends JavaPlugin {
     private GiftManager giftManager;
     private WichtelManager wichtelManager;
     private SnowmanManager snowmanManager;
+    private BiomeSnapshotBackup backupManager;
+    private de.boondocksulfur.christmas.util.UpdateChecker updateChecker;
+    private BiomeCompare biomeCompare;
+    private de.boondocksulfur.christmas.integration.RegionIntegration regionIntegration;
 
     // Debug-Modus für ausführliche Logs
     private boolean debugMode = false;
@@ -37,15 +41,19 @@ public class ChristmasSeason extends JavaPlugin {
         // Eine geteilte FoliaLib-Instanz für alle Manager
         this.foliaScheduler    = new FoliaSchedulerHelper(this);
         this.languageManager   = new LanguageManager(this);
+        this.backupManager     = new BiomeSnapshotBackup(this);
+        this.updateChecker     = new de.boondocksulfur.christmas.util.UpdateChecker(this);
+        this.biomeCompare      = new BiomeCompare(this);
         this.snowstormManager  = new SnowstormManager(this);
         this.biomeSnowManager  = new BiomeSnowManager(this);
         this.decorationManager = new DecorationManager(this);
         this.giftManager       = new GiftManager(this);
         this.wichtelManager    = new WichtelManager(this);
         this.snowmanManager    = new SnowmanManager(this);
+        this.regionIntegration = new de.boondocksulfur.christmas.integration.RegionIntegration(this);
 
         getCommand("xmas").setExecutor(new XmasCommand(this));
-        getCommand("xmas").setTabCompleter(new XmasTabCompleter());
+        getCommand("xmas").setTabCompleter(new XmasTabCompleter(this));
         getCommand("xmasgift").setExecutor(new XmasGiftCommand(this));
 
         Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
@@ -56,13 +64,33 @@ public class ChristmasSeason extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new MobProtectionListener(), this);
         Bukkit.getPluginManager().registerEvents(new ChunkSnowListener(this), this);
         Bukkit.getPluginManager().registerEvents(new PlayerSnowBubbleListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new UpdateNotificationListener(this), this);
+
+        // bStats Metrics
+        new org.bstats.bukkit.Metrics(this, 30930);
+
+        // Startup-Sicherheitsprüfungen (DB-Integrität, Emergency-Backups)
+        performStartupSafetyChecks();
 
         if (isActive()) startFeatures();
+
+        // Auto-Update-Check beim Server-Start
+        updateChecker.startAutoCheck();
+
         getLogger().info("ChristmasSeason enabled.");
     }
 
     @Override
-    public void onDisable() { stopFeatures(); }
+    public void onDisable() {
+        // NOTFALL-BACKUP: Wenn Server stoppt während xmas ON aktiv ist!
+        if (isActive() && backupManager != null) {
+            getLogger().warning("Server wird gestoppt während ChristmasSeason AKTIV ist!");
+            getLogger().warning("Erstelle Notfall-Backup der Biome-Datenbank...");
+            backupManager.createEmergencyBackup();
+        }
+
+        stopFeatures();
+    }
 
     public boolean isActive() { return getConfig().getBoolean("active", false); }
 
@@ -91,12 +119,13 @@ public class ChristmasSeason extends JavaPlugin {
 
     /** Stop Features mit optionalem Biome-DB schließen */
     public void stopFeatures(boolean closeBiomeDatabase) {
-        snowstormManager.stop();
-        biomeSnowManager.stop(closeBiomeDatabase);  // DB optional offen lassen
-        decorationManager.stop();
-        giftManager.stop();
-        wichtelManager.stop();
-        snowmanManager.stop();
+        // FIX: Null-Checks für den Fall dass onEnable() fehlgeschlagen ist
+        if (snowstormManager != null) snowstormManager.stop();
+        if (biomeSnowManager != null) biomeSnowManager.stop(closeBiomeDatabase);
+        if (decorationManager != null) decorationManager.stop();
+        if (giftManager != null) giftManager.stop();
+        if (wichtelManager != null) wichtelManager.stop();
+        if (snowmanManager != null) snowmanManager.stop();
     }
     public void reloadAll() {
         reloadConfig();
@@ -124,6 +153,64 @@ public class ChristmasSeason extends JavaPlugin {
             }
         } catch (Exception e) {
             getLogger().warning("config.yml: Ungültiger Biom-Name in biome.target: '" + biomeName + "' - es wird SNOWY_PLAINS verwendet.");
+        }
+    }
+
+    /**
+     * Führt Sicherheitsprüfungen beim Start durch:
+     * - DB-Integritätscheck
+     * - Warnung bei active:true ohne DB
+     * - Erkennung von Emergency-Backups (vorheriger Crash)
+     */
+    private void performStartupSafetyChecks() {
+        java.io.File dbFile = new java.io.File(getDataFolder(), "biome-snapshot.db");
+
+        // Check 1: active:true aber keine DB → Warnung
+        if (isActive() && !dbFile.exists() && getConfig().getBoolean("biome.enableSnapshot", true)) {
+            getLogger().warning("═══════════════════════════════════════════");
+            getLogger().warning(" WARNUNG: ChristmasSeason ist aktiv, aber keine Snapshot-DB vorhanden!");
+            getLogger().warning(" Biome wurden möglicherweise geändert und können nicht restored werden.");
+            getLogger().warning(" Prüfe: /xmas backup list (für verfügbare Backups)");
+            getLogger().warning("═══════════════════════════════════════════");
+        }
+
+        // Check 2: DB-Integrität prüfen (falls DB existiert)
+        if (dbFile.exists()) {
+            try {
+                Class.forName("org.sqlite.JDBC");
+                try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+                     java.sql.Statement stmt = conn.createStatement();
+                     java.sql.ResultSet rs = stmt.executeQuery("PRAGMA integrity_check")) {
+                    if (rs.next()) {
+                        String result = rs.getString(1);
+                        if (!"ok".equalsIgnoreCase(result)) {
+                            getLogger().severe("═══════════════════════════════════════════");
+                            getLogger().severe(" DATENBANK-KORRUPTION ERKANNT!");
+                            getLogger().severe(" Integrity Check: " + result);
+                            getLogger().severe(" Empfehlung: /xmas backup restore SAFE confirm");
+                            getLogger().severe("═══════════════════════════════════════════");
+                        } else {
+                            debug("DB-Integritätscheck: OK");
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                getLogger().severe("DB-Integritätscheck fehlgeschlagen: " + e.getMessage());
+                getLogger().severe("Die Datenbank könnte beschädigt sein. Prüfe: /xmas backup list");
+            }
+        }
+
+        // Check 3: Emergency-Backups erkennen (Hinweis auf vorherigen Crash)
+        if (backupManager != null) {
+            java.util.Map<String, java.io.File> allBackups = backupManager.listAllBackups();
+            long emergencyCount = allBackups.keySet().stream().filter(k -> k.startsWith("EMERGENCY")).count();
+            if (emergencyCount > 0) {
+                getLogger().warning("═══════════════════════════════════════════");
+                getLogger().warning(" " + emergencyCount + " Emergency-Backup(s) gefunden!");
+                getLogger().warning(" Der Server wurde zuvor gestoppt während ChristmasSeason aktiv war.");
+                getLogger().warning(" Prüfe: /xmas backup list → /xmas backup restore <ID> confirm");
+                getLogger().warning("═══════════════════════════════════════════");
+            }
         }
     }
 
@@ -163,6 +250,10 @@ public class ChristmasSeason extends JavaPlugin {
     // Getters
     public FoliaSchedulerHelper getFoliaScheduler() { return foliaScheduler; }
     public LanguageManager getLanguageManager() { return languageManager; }
+    public BiomeSnapshotBackup getBackupManager() { return backupManager; }
+    public de.boondocksulfur.christmas.util.UpdateChecker getUpdateChecker() { return updateChecker; }
+    public BiomeCompare getBiomeCompare() { return biomeCompare; }
+    public de.boondocksulfur.christmas.integration.RegionIntegration getRegionIntegration() { return regionIntegration; }
     public GiftManager getGiftManager() { return giftManager; }
     public BiomeSnowManager getBiomeSnowManager() { return biomeSnowManager; }
     public WichtelManager getWichtelManager() { return wichtelManager; }

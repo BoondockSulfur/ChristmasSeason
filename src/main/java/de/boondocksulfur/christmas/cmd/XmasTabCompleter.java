@@ -3,7 +3,9 @@ package de.boondocksulfur.christmas.cmd;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import de.boondocksulfur.christmas.ChristmasSeason;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -12,12 +14,20 @@ import java.util.List;
  */
 public class XmasTabCompleter implements TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("on", "off", "status", "reload", "biome", "storm", "debug");
-    private static final List<String> BIOME_SUB   = List.of("set", "clearsnap", "status");
+    private static final List<String> SUBCOMMANDS = List.of("on", "off", "status", "reload", "biome", "storm", "backup", "update", "debug");
+    private static final List<String> BIOME_SUB   = List.of("set", "clearsnap", "status", "compare", "fix-diff");
     private static final List<String> STORM_SUB   = List.of("on", "off", "toggle", "status", "pulse");
+    private static final List<String> BACKUP_SUB  = List.of("list", "restore", "create", "clear");
+    private static final List<String> UPDATE_SUB  = List.of("check");
     private static final List<String> DEBUG_SUB   = List.of("verbose");
     private static final List<String> PULSE_SECS  = List.of("5", "10", "30", "60");
     private static final List<String> RADII       = List.of("1", "2", "3", "5");
+
+    private final ChristmasSeason plugin;
+
+    public XmasTabCompleter(ChristmasSeason plugin) {
+        this.plugin = plugin;
+    }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
@@ -29,28 +39,53 @@ public class XmasTabCompleter implements TabCompleter {
             return switch (args[0].toLowerCase()) {
                 case "biome" -> filter(BIOME_SUB, args[1]);
                 case "storm" -> filter(STORM_SUB, args[1]);
+                case "backup" -> filter(BACKUP_SUB, args[1]);
+                case "update" -> filter(UPDATE_SUB, args[1]);
                 case "debug" -> filter(DEBUG_SUB, args[1]);
                 default -> List.of();
             };
         }
 
-        if (args.length == 3 && args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("set")) {
-            List<String> biomes = de.boondocksulfur.christmas.util.Registries.biomes().stream()
-                    .map(b -> b.getKey().getKey())
-                    .sorted()
-                    .toList();
-            return filter(biomes, args[2]);
+        if (args.length == 3) {
+            if (args[0].equalsIgnoreCase("biome")) {
+                switch (args[1].toLowerCase()) {
+                    case "set" -> {
+                        List<String> biomes = de.boondocksulfur.christmas.util.Registries.biomes().stream()
+                                .map(b -> b.getKey().getKey())
+                                .sorted()
+                                .toList();
+                        return filter(biomes, args[2]);
+                    }
+                    case "compare", "fix-diff" -> {
+                        return filter(backupIds(), args[2]);
+                    }
+                }
+            }
+            if (args[0].equalsIgnoreCase("backup") && args[1].equalsIgnoreCase("restore")) {
+                return filter(backupIds(), args[2]);
+            }
+            if (args[0].equalsIgnoreCase("storm") && args[1].equalsIgnoreCase("pulse")) {
+                return filter(PULSE_SECS, args[2]);
+            }
         }
 
-        if (args.length == 3 && args[0].equalsIgnoreCase("storm") && args[1].equalsIgnoreCase("pulse")) {
-            return filter(PULSE_SECS, args[2]);
-        }
-
-        if (args.length == 4 && args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("set")) {
-            return filter(RADII, args[3]);
+        if (args.length == 4) {
+            if (args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("set")) {
+                return filter(RADII, args[3]);
+            }
+            if (args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("fix-diff")) {
+                return filter(List.of("confirm"), args[3]);
+            }
+            if (args[0].equalsIgnoreCase("backup") && args[1].equalsIgnoreCase("restore")) {
+                return filter(List.of("confirm"), args[3]);
+            }
         }
 
         return List.of();
+    }
+
+    private List<String> backupIds() {
+        return new ArrayList<>(plugin.getBackupManager().listAllBackups().keySet());
     }
 
     private List<String> filter(List<String> options, String prefix) {

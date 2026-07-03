@@ -1,4 +1,4 @@
-# ChristmasSeason v2.3 🎄
+# ChristmasSeason v2.4 🎄
 
 **Transform your Minecraft world into a winter wonderland!**
 
@@ -27,6 +27,12 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **Elves:** Friendly NPCs that wander around
 - **Snowmen:** Aggressive snow golems that throw snowballs
 
+### 🛡️ Protection & Safety (v2.4.0)
+- **Region Protection:** No spawns in WorldGuard regions or GriefPrevention claims (soft dependency)
+- **Backup System:** Automatic SAFE/timestamp/emergency backups of the biome database
+- **Startup Safety Checks:** DB integrity check, crash detection via emergency backups
+- **Update Checker:** `/xmas update check` + admin notifications (Modrinth/GitHub)
+
 ### 🔧 Performance Features
 - **SQLite Snapshots:** Compressed biome storage (~5-10 MB instead of 156 MB)
 - **Unlimited Chunks:** No more 2000-chunk limit
@@ -53,7 +59,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.3.0.jar`
+1. **Download:** Get `ChristmasSeason-2.4.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
@@ -75,7 +81,11 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 | `/xmas status` | Shows status (active/inactive) | `xmas.admin` |
 | `/xmas reload` | Reloads configuration | `xmas.admin` |
 | `/xmas biome set <biome> [radius]` | Manually sets biomes (only when active) | `xmas.admin` |
-| `/xmas biome clearsnap` | Deletes biome snapshot database | `xmas.admin` |
+| `/xmas biome clearsnap` | Deletes biome snapshot database (guarded) | `xmas.admin` |
+| `/xmas biome compare <backup>` | Compares current biomes with a backup | `xmas.admin` |
+| `/xmas biome fix-diff <backup> confirm` | Restores differing chunks from a backup | `xmas.admin` |
+| `/xmas backup <list\|restore\|create\|clear>` | Manages biome database backups | `xmas.admin` |
+| `/xmas update check` | Checks Modrinth/GitHub for updates | `xmas.admin` |
 
 **Examples:**
 ```

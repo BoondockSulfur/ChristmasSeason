@@ -141,7 +141,15 @@ public class DecorationManager {
 
         scheduler.runAtLocation(playerLoc, () -> {
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
-            Location place = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 7, 5).add(0, 0.5, 0);
+            Location place = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 7, 5);
+
+            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(place)) {
+                plugin.debug("Decoration spawn blocked by region protection at " + place.getBlockX() + "," + place.getBlockZ());
+                return;
+            }
+
+            place = place.add(0, 0.5, 0);
 
             String entry = drops.get(random.nextInt(drops.size()));
             String[] split = entry.split(":");

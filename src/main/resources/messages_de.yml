@@ -8,7 +8,7 @@ no-permission: "&cKeine Berechtigung."
 
 # Commands - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
 
   # ON (Quotes needed because YAML interprets 'on' as boolean)
   "on":
@@ -31,7 +31,7 @@ command:
 
   # BIOME
   biome:
-    usage: "&b/xmas biome &7<set|restore|clearsnap|status>"
+    usage: "&b/xmas biome &7<set|clearsnap|status|compare|fix-diff>"
 
     set:
       usage: "&b/xmas biome set &e<BIOME> &7[radius_chunks]"
@@ -140,6 +140,33 @@ log:
     reset-start: "Starte Biome-Reset für {0} Chunks..."
     reset-complete: "Biome-Reset abgeschlossen!"
     ice-removed-debug: "Entferne Eis in Biome: {0} (isIcy={1})"
+
+  # Backup-System
+  backup:
+    directory-created: "Backup-Verzeichnis erstellt: {0}"
+    safe-created: "SAFE-Backup erstellt in '{0}' ({1} KB)"
+    timestamp-created: "Backup erstellt: {0} ({1} KB)"
+    emergency-created: "NOTFALL-Backup erstellt: {0} ({1} KB)"
+    emergency-warning: "  -> Server wurde gestoppt waehrend xmas ON aktiv war!"
+    error-creating-safe: "Fehler beim Erstellen des SAFE-Backups: {0}"
+    error-creating-timestamp: "Fehler beim Erstellen des Timestamp-Backups: {0}"
+    error-creating-emergency: "Fehler beim Erstellen des Notfall-Backups: {0}"
+    error-deleting: "Fehler beim Loeschen von Backup '{0}'"
+    file-not-found: "Backup-Datei nicht gefunden: {0}"
+    closing-database: "Schliesse Datenbank fuer Backup-Wiederherstellung..."
+    restored: "Backup '{0}' wiederhergestellt ({1} KB)"
+    error-restoring: "Fehler beim Wiederherstellen des Backups: {0}"
+    database-reopened: "Datenbank neu geoeffnet."
+    cleared: "{0} Backup(s) geloescht."
+    list-header: "&6=== BACKUPS ==="
+    list-entry: "&7  [{0}] &f{1} &7({2} KB)"
+    list-empty: "&7Keine Backups vorhanden."
+    list-footer: "&6================"
+    restore-usage: "&b/xmas backup restore &e<ID>"
+    invalid-id: "&cUngueltige Backup-ID."
+    restore-confirm: "&aBitte bestaetige Wiederherstellung:"
+    restore-warning: "&c  Aktuelle Datenbank wird ersetzt!"
+    restore-command: "&e  /xmas backup restore {0} confirm"
 
   database:
     jdbc-not-found: "SQLite JDBC Driver nicht gefunden! Plugin kann nicht funktionieren."

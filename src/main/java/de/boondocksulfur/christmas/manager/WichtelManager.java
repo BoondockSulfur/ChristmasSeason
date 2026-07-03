@@ -200,6 +200,12 @@ public class WichtelManager {
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
 
+            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(spawn)) {
+                plugin.debug("Wichtel spawn blocked by region protection at " + spawn.getBlockX() + "," + spawn.getBlockZ());
+                return;
+            }
+
             Zombie z = (Zombie) w.spawnEntity(spawn, EntityType.ZOMBIE);
             z.setBaby();
             z.customName(lang.getComponent("entity.wichtel"));
@@ -257,6 +263,12 @@ public class WichtelManager {
 
             // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
+
+            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(spawn)) {
+                plugin.debug("Elf spawn blocked by region protection at " + spawn.getBlockX() + "," + spawn.getBlockZ());
+                return;
+            }
 
             Allay a = (Allay) w.spawnEntity(spawn, EntityType.ALLAY);
             a.customName(lang.getComponent("entity.elf"));

@@ -31,6 +31,15 @@ public class BiomeSnapshotDatabase {
     }
 
     /**
+     * Konstruktor für custom DB-Datei (z.B. Backup)
+     * Wird von BiomeCompare verwendet zum Lesen von Backup-Dateien
+     */
+    public BiomeSnapshotDatabase(ChristmasSeason plugin, File customDbFile) {
+        this.plugin = plugin;
+        this.dbFile = customDbFile;
+    }
+
+    /**
      * Öffnet die Datenbankverbindung und erstellt die Tabelle falls nötig
      */
     public synchronized void open() throws SQLException {
@@ -311,17 +320,20 @@ public class BiomeSnapshotDatabase {
 
             boolean isNameBased = (magic == 0x3E);
 
-            // Header lesen
+            // Header lesen (FIX: EOF-Prüfung um OutOfMemoryError bei korrupten Daten zu verhindern)
             int yLayersHi = gzip.read();
             int yLayersLo = gzip.read();
-            int yLayers = (yLayersHi << 8) | yLayersLo;
-
             int yStartHi = gzip.read();
             int yStartLo = gzip.read();
+            int yStep = gzip.read();
+
+            if (yLayersHi == -1 || yLayersLo == -1 || yStartHi == -1 || yStartLo == -1 || yStep == -1) {
+                throw new RuntimeException("Corrupt 3D biome snapshot - unexpected EOF in header");
+            }
+
+            int yLayers = (yLayersHi << 8) | yLayersLo;
             short yStartShort = (short) ((yStartHi << 8) | yStartLo);
             int yStart = yStartShort;
-
-            int yStep = gzip.read();
 
             plugin.debug("3D-Snapshot: yLayers=" + yLayers + ", yStart=" + yStart + ", yStep=" + yStep + ", format=" + (isNameBased ? "Namen" : "Ordinals"));
 

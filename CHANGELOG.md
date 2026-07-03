@@ -2,6 +2,27 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.4.0] - 2026-07-03
+
+**Feature Update:** Merges the April feature line (region protection, backup system, update checker, bStats) into the hardened 2.3.0 codebase.
+
+This release unifies two development lines: the WorldGuard/GriefPrevention + backup feature work (developed April 2026) and the thread-safety/26.x/Adventure overhaul from 2.2.0-2.3.0. All features were re-integrated on top of the hardened codebase and re-verified live.
+
+### Added
+- **Region protection** (soft dependency, reflection-based - no hard plugin requirement): gifts, decorations, Wichtel, Elfen and Snowmen no longer spawn inside WorldGuard regions or GriefPrevention claims (configurable via `regionIntegration` in config.yml)
+- **Backup system** for the biome snapshot database: automatic SAFE backup on `/xmas on`, timestamp backup on `/xmas off`, emergency backup when the server stops while the event is active; managed via `/xmas backup <list|restore|create|clear>`
+- **Startup safety checks**: database integrity check (PRAGMA integrity_check), warning when active without a snapshot DB, detection of emergency backups from a previous crash
+- **Update checker** (`/xmas update check` + console notice + admin join notification) querying Modrinth and GitHub
+- **Biome compare/repair tools**: `/xmas biome compare <backup>` and `/xmas biome fix-diff <backup> confirm`
+- **bStats metrics** (plugin ID 30930, relocated)
+- **Command guards**: `/xmas on` is blocked while a restore is running; `/xmas biome clearsnap` refuses to delete the snapshot while the event is active or no backup exists
+- Snowmen now use a stricter spawn check and never spawn in/near water (they would melt)
+- SpawnUtil improvements: no spawns above Y=100 (roofs/trees/mountains), stricter sky-light check
+
+### Fixed
+- Snowstorm auto-mode toggle chain now stops reliably on `/xmas off` (no orphaned weather toggles)
+- Corrupt snapshot data is detected at the header level instead of causing an OutOfMemoryError
+
 ## [2.3.0] - 2026-07-03
 
 **Minor Update:** Minecraft 26.x support.

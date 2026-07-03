@@ -8,7 +8,7 @@ no-permission: "&cNo permission."
 
 # Commands - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
 
   # ON (Quotes needed because YAML interprets 'on' as boolean)
   "on":
@@ -31,7 +31,7 @@ command:
 
   # BIOME
   biome:
-    usage: "&b/xmas biome &7<set|restore|clearsnap|status>"
+    usage: "&b/xmas biome &7<set|clearsnap|status|compare|fix-diff>"
 
     set:
       usage: "&b/xmas biome set &e<BIOME> &7[radius_chunks]"
@@ -140,6 +140,33 @@ log:
     reset-start: "Starting biome reset for {0} chunks..."
     reset-complete: "Biome reset completed!"
     ice-removed-debug: "Removing ice in biome: {0} (isIcy={1})"
+
+  # Backup system
+  backup:
+    directory-created: "Backup directory created: {0}"
+    safe-created: "SAFE backup created in '{0}' ({1} KB)"
+    timestamp-created: "Backup created: {0} ({1} KB)"
+    emergency-created: "EMERGENCY backup created: {0} ({1} KB)"
+    emergency-warning: "  -> Server was stopped while xmas ON was active!"
+    error-creating-safe: "Error creating SAFE backup: {0}"
+    error-creating-timestamp: "Error creating timestamp backup: {0}"
+    error-creating-emergency: "Error creating emergency backup: {0}"
+    error-deleting: "Error deleting backup '{0}'"
+    file-not-found: "Backup file not found: {0}"
+    closing-database: "Closing database for backup restore..."
+    restored: "Backup '{0}' restored ({1} KB)"
+    error-restoring: "Error restoring backup: {0}"
+    database-reopened: "Database reopened."
+    cleared: "{0} backup(s) deleted."
+    list-header: "&6=== BACKUPS ==="
+    list-entry: "&7  [{0}] &f{1} &7({2} KB)"
+    list-empty: "&7No backups available."
+    list-footer: "&6================"
+    restore-usage: "&b/xmas backup restore &e<ID>"
+    invalid-id: "&cInvalid backup ID."
+    restore-confirm: "&aPlease confirm restore:"
+    restore-warning: "&c  Current database will be replaced!"
+    restore-command: "&e  /xmas backup restore {0} confirm"
 
   database:
     jdbc-not-found: "SQLite JDBC driver not found! Plugin cannot function."

@@ -236,6 +236,11 @@ public class BiomeSnowManager {
     // signalisiert completionCheck, ob 'db' noch die eigene Instanz ist
     private final java.util.concurrent.atomic.AtomicBoolean restoreRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    /** Läuft gerade ein Biome-Restore? (Guard für '/xmas on' im XmasCommand) */
+    public boolean isRestoring() {
+        return restoreRunning.get();
+    }
+
     /** Snapshot vollständig und asynchron zurückspielen (für /xmas off) */
     public void restoreALLAsync(int perTick) {
         if (db == null) {

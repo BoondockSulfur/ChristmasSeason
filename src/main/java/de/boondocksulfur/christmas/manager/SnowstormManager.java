@@ -12,6 +12,8 @@ public class SnowstormManager {
     private final FoliaSchedulerHelper scheduler;
     private WrappedTask enforceTask, autoTask;
     private boolean desiredStorm = true;
+    // FIX: Stoppt die rekursive Auto-Toggle-Kette zuverlässig nach stop()
+    private volatile boolean autoRunning = false;
 
     public SnowstormManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -36,6 +38,7 @@ public class SnowstormManager {
     }
 
     public void stop() {
+        autoRunning = false; // FIX: Stoppe rekursive Auto-Toggle-Kette
         if (enforceTask != null) { enforceTask.cancel(); enforceTask = null; }
         if (autoTask != null)     { autoTask.cancel();     autoTask = null; }
     }
@@ -45,10 +48,14 @@ public class SnowstormManager {
         final int offSec = Math.max(5, plugin.getConfig().getInt("snowstorm.auto.offSeconds", 45));
 
         // OPTIMIERT: Verwende runTaskLater statt runTaskTimer - vermeidet jeden-Tick-Overhead!
+        autoRunning = true;
         scheduleAutoToggle(true, onSec, offSec);
     }
 
     private void scheduleAutoToggle(boolean currentState, int onSec, int offSec) {
+        // FIX: Auto-Modus wurde gestoppt - keine neuen Toggles mehr einplanen
+        if (!autoRunning) return;
+
         // Setze aktuellen State und enforce (WICHTIG: über Global Scheduler wegen Folia!)
         desiredStorm = currentState;
         scheduler.runGlobalTask(this::enforce);
