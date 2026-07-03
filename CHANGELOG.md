@@ -12,6 +12,10 @@ One JAR now covers Minecraft 1.21.x **and** the year-based 26.x versions (`api-v
 - Compiled against Paper API `26.1.2.build.72-stable` (Paper's new `<mc>.build.N-stable` artifact scheme; replaces `1.21.3-R0.1-SNAPSHOT`)
 - Bytecode stays at Java 21, so the plugin runs on Java 21 (1.21.x servers) and Java 25 (26.x servers)
 
+### Fixed
+- Literal `&` in messages is no longer mangled into `§` ("Wichtel & Elfen" was logged as "Wichtel § Elfen") - only valid color codes like `&6` are translated
+- Console log messages (`log.*` keys) no longer contain raw `§` color codes
+
 ### Verified
 - Boot- and function-tested (`/xmas on` → `status` → `/xmas off`) on Paper **26.2** (Java 25) and Paper **1.21.11** with the identical JAR - zero exceptions, SQLite natives, biome database and weather control all working on both
 

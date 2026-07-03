@@ -104,8 +104,16 @@ public class LanguageManager {
                     return "§c[Missing: " + key + "]";
                 }
             }
-            // Farbcodes konvertieren
-            message = message.replace('&', '§');
+            // Farbcodes konvertieren - NUR gültige Codes wie '&6', literale
+            // '&' (z.B. "Wichtel & Elfen") bleiben erhalten!
+            message = org.bukkit.ChatColor.translateAlternateColorCodes('&', message);
+
+            // 'log.*'-Keys landen ausschließlich im Server-Log, wo §-Codes
+            // nicht gerendert werden - Farben dort direkt entfernen
+            if (key.startsWith("log.")) {
+                message = org.bukkit.ChatColor.stripColor(message);
+            }
+
             cache.put(key, message);
         }
 
