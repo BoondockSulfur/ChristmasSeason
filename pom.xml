@@ -5,14 +5,16 @@
 
     <groupId>de.boondocksulfur</groupId>
     <artifactId>christmas-season</artifactId>
-    <version>2.2.0</version>
+    <version>2.3.0</version>
     <name>ChristmasSeason</name>
 
-    <!-- wenn euer Server noch auf Java 17 läuft: 17 eintragen -->
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <!-- Release 21: Bytecode läuft auf Java 21 (1.21.x-Server) und Java 25 (26.x-Server) -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Paper-API für MC 26.x (Jahresversionen; Schema '<mc>.build.N-stable' statt '-R0.1-SNAPSHOT').
+             Eine JAR deckt 1.21.x UND 26.x ab - api-version '1.21' in plugin.yml bleibt das Minimum. -->
+        <paper.version>26.1.2.build.72-stable</paper.version>
     </properties>
 
     <repositories>
@@ -30,7 +32,7 @@
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
-            <version>1.21.3-R0.1-SNAPSHOT</version>
+            <version>${paper.version}</version>
             <scope>provided</scope>
         </dependency>
 

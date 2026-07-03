@@ -1,4 +1,4 @@
-# ChristmasSeason v2.2 🎄
+# ChristmasSeason v2.3 🎄
 
 **Transform your Minecraft world into a winter wonderland!**
 
@@ -52,15 +52,15 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.2.0.jar`
+1. **Download:** Get `ChristmasSeason-2.3.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Spigot/Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
 5. **Activation:** `/xmas on` - Done! 🎄
 
 **Requirements:**
-- Minecraft 1.21+ (or Folia 1.20+)
-- Java 21+
+- Minecraft 1.21.x or 26.x (or Folia 1.20+)
+- Java 21+ (Minecraft 26.x servers require Java 25+)
 - Spigot/Paper/Purpur/Folia Server
 
 ---
@@ -295,7 +295,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## 🎯 Developer Notes
 
 ### Dependencies:
-- **Paper API** 1.21.3-R0.1-SNAPSHOT
+- **Paper API** 26.1.2.build.72-stable (one JAR covers 1.21.x and 26.x, api-version 1.21)
 - **FoliaLib** 0.4.3 (shaded & relocated)
 - **SQLite JDBC** 3.45.0.0 (shaded)
 

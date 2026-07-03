@@ -2,6 +2,19 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.3.0] - 2026-07-03
+
+**Minor Update:** Minecraft 26.x support.
+
+One JAR now covers Minecraft 1.21.x **and** the year-based 26.x versions (`api-version: "1.21"` remains the minimum).
+
+### Changed
+- Compiled against Paper API `26.1.2.build.72-stable` (Paper's new `<mc>.build.N-stable` artifact scheme; replaces `1.21.3-R0.1-SNAPSHOT`)
+- Bytecode stays at Java 21, so the plugin runs on Java 21 (1.21.x servers) and Java 25 (26.x servers)
+
+### Verified
+- Boot- and function-tested (`/xmas on` → `status` → `/xmas off`) on Paper **26.2** (Java 25) and Paper **1.21.11** with the identical JAR - zero exceptions, SQLite natives, biome database and weather control all working on both
+
 ## [2.2.0] - 2026-07-02
 
 **Minor Update:** Thread-safety hardening, correct restore completion, smaller JAR and admin quality-of-life.
