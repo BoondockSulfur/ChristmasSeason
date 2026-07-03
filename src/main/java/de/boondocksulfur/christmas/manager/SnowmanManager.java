@@ -226,6 +226,12 @@ public class SnowmanManager {
             ball.addScoreboardTag("XMAS_SNOWBALL");
             ball.setVelocity(direction);
 
+        }, () -> {
+            // FOLIA FIX: retired - Schneemann wurde entfernt (getötet/geschmolzen),
+            // bevor der Task lief. Ohne diesen Callback bliebe die UUID im Tracking
+            // und das Spawn-Limit wäre irgendwann dauerhaft voll!
+            entityAttackTasks.remove(snowmanId);
+            trackedSnowmen.remove(snowmanId);
         }, 60L, attackInterval * 20L);
 
         if (task != null) {

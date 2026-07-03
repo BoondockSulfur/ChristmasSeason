@@ -2,7 +2,7 @@
 
 **Transform your Minecraft world into a winter wonderland!**
 
-A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gifts, and much more. Now with **Multi-Platform Support** for Spigot, Paper, Purpur, **and Folia**!
+A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gifts, and much more. Now with **Multi-Platform Support** for Paper, Purpur, **and Folia** (MC 1.21.3+ and 26.x)!
 
 ---
 
@@ -41,12 +41,13 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 | Platform | Status | Scheduler Type | Performance |
 |----------|--------|----------------|-------------|
-| **Paper** | ✅ Tested | Global Timer | 18-20 TPS |
-| **Folia** | ✅ Tested | Player-based Entity Scheduler | Optimal for 50+ players |
+| **Paper** | ✅ Tested (1.21.11, 26.2) | Global Timer | 18-20 TPS |
+| **Folia** | ✅ Tested (1.21.11) | Player-based Entity Scheduler | Optimal for 50+ players |
 | **Purpur** | ✅ Compatible | Global Timer | 18-20 TPS |
-| **Spigot** | ✅ Compatible | Global Timer | 18-20 TPS |
 
 **Automatic Detection:** The plugin detects the platform on startup and chooses the optimal strategy!
+
+> **Note:** Since v2.3.0 the plugin uses Paper's Adventure API - plain Spigot is no longer supported. Use Paper or a Paper fork.
 
 ---
 
@@ -54,14 +55,14 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 1. **Download:** Get `ChristmasSeason-2.3.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
-3. **Server Start:** Start your server (Spigot/Paper/Purpur/Folia)
+3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
 5. **Activation:** `/xmas on` - Done! 🎄
 
 **Requirements:**
-- Minecraft 1.21.3+ or 26.x (Paper/Purpur/Folia); NOT 1.21.1/1.21.2 (Biome enum/interface change)
+- Minecraft 1.21.3+ or 26.x; NOT 1.21.1/1.21.2 (Biome enum/interface change)
 - Java 21+ (Minecraft 26.x servers require Java 25+)
-- Spigot/Paper/Purpur/Folia Server
+- Paper/Purpur/Folia server (no plain Spigot - Adventure API required)
 
 ---
 
@@ -69,12 +70,12 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 | Command | Description | Permission |
 |---------|-------------|------------|
-| `/xmas on` | Activates ChristmasSeason | `christmas.admin` |
-| `/xmas off` | Deactivates and restores biomes | `christmas.admin` |
-| `/xmas status` | Shows status (active/inactive) | `christmas.admin` |
-| `/xmas reload` | Reloads configuration | `christmas.admin` |
-| `/xmas biome set <biome> [radius]` | Manually sets biomes (only when active) | `christmas.admin` |
-| `/xmas biome clearsnap` | Deletes biome snapshot database | `christmas.admin` |
+| `/xmas on` | Activates ChristmasSeason | `xmas.admin` |
+| `/xmas off` | Deactivates and restores biomes | `xmas.admin` |
+| `/xmas status` | Shows status (active/inactive) | `xmas.admin` |
+| `/xmas reload` | Reloads configuration | `xmas.admin` |
+| `/xmas biome set <biome> [radius]` | Manually sets biomes (only when active) | `xmas.admin` |
+| `/xmas biome clearsnap` | Deletes biome snapshot database | `xmas.admin` |
 
 **Examples:**
 ```
@@ -151,7 +152,7 @@ snowmen:
 
 ## 🔧 Performance Tuning
 
-### For Paper/Spigot/Purpur:
+### For Paper/Purpur:
 
 **Standard (recommended):**
 - `perTickBudget: 12` - Fast updates without lag
@@ -270,7 +271,7 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 - ✅ Fixed client-side biome caching after `/xmas off`
 
 **v2.0.0 Highlights:**
-- 🎄 Multi-Platform Support (Spigot/Paper/Purpur/Folia)
+- 🎄 Multi-Platform Support (Paper/Purpur/Folia)
 - ⚡ Chunk Queue System (prevents TPS spikes)
 - 🐛 Race Condition Fixes (biome set, restore)
 - 🚀 2x faster biome updates (perTickBudget: 12)

@@ -165,11 +165,15 @@ public class DecorationManager {
             trackedDecorations.add(item.getUniqueId());
 
             int lifetime = plugin.getConfig().getInt("decoration.lifetimeSeconds", 180);
+            java.util.UUID itemId = item.getUniqueId();
             scheduler.runForEntityLater(item, () -> {
                 if (!item.isDead() && item.isValid()) {
                     item.remove();
-                    trackedDecorations.remove(item.getUniqueId()); // Remove from tracking
                 }
+                trackedDecorations.remove(itemId);
+            }, () -> {
+                // FOLIA FIX: retired - Item wurde vorher aufgesammelt/despawnt
+                trackedDecorations.remove(itemId);
             }, lifetime * 20L);
         });
     }

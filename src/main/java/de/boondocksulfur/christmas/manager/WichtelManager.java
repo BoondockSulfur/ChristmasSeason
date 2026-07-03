@@ -214,16 +214,23 @@ public class WichtelManager {
             startEntityStealTask(z);
 
             // FIX: Lifetime Enforcement - entferne nach konfigurierter Zeit
+            // FOLIA FIX: retired-Callback! Stirbt der Wichtel früher (Spieler tötet ihn),
+            // wird der Task auf Folia verworfen und liefe nie - ohne retired bliebe die
+            // UUID für immer im Tracking und das Spawn-Limit wäre irgendwann voll toter Mobs.
             int lifetime = Math.max(10, plugin.getConfig().getInt("wichtel.lifetimeSeconds", 240));
             UUID wichtelId = z.getUniqueId();
+            Runnable cleanupWichtel = () -> {
+                trackedWichtel.remove(wichtelId);
+                WrappedTask st = entityStealTasks.remove(wichtelId);
+                if (st != null) st.cancel();
+            };
             scheduler.runForEntityLater(z, () -> {
                 Entity e = Bukkit.getEntity(wichtelId);
                 if (e != null && e.isValid()) {
                     e.remove();
                 }
-                trackedWichtel.remove(wichtelId);
-                entityStealTasks.remove(wichtelId); // Cleanup Task
-            }, lifetime * 20L);
+                cleanupWichtel.run();
+            }, cleanupWichtel, lifetime * 20L);
         });
     }
 
@@ -263,16 +270,21 @@ public class WichtelManager {
             startEntityStealTask(a);
 
             // FIX: Lifetime Enforcement - entferne nach konfigurierter Zeit
+            // FOLIA FIX: retired-Callback (siehe spawnWichtelNearPlayer)
             int lifetime = Math.max(10, plugin.getConfig().getInt("wichtel.lifetimeSeconds", 240));
             UUID elfId = a.getUniqueId();
+            Runnable cleanupElf = () -> {
+                trackedElfen.remove(elfId);
+                WrappedTask st = entityStealTasks.remove(elfId);
+                if (st != null) st.cancel();
+            };
             scheduler.runForEntityLater(a, () -> {
                 Entity e = Bukkit.getEntity(elfId);
                 if (e != null && e.isValid()) {
                     e.remove();
                 }
-                trackedElfen.remove(elfId);
-                entityStealTasks.remove(elfId); // Cleanup Task
-            }, lifetime * 20L);
+                cleanupElf.run();
+            }, cleanupElf, lifetime * 20L);
         });
     }
 
@@ -318,6 +330,12 @@ public class WichtelManager {
                     entity.teleport(newLoc);
                 }
             }
+        }, () -> {
+            // FOLIA FIX: retired - Entity wurde entfernt, bevor/während der Task lief.
+            // Tracking sofort bereinigen, sonst blockieren tote UUIDs das Spawn-Limit!
+            entityStealTasks.remove(entityId);
+            trackedWichtel.remove(entityId);
+            trackedElfen.remove(entityId);
         }, 40L, 40L); // Alle 2 Sekunden (40 Ticks)
 
         if (task != null) {

@@ -52,6 +52,8 @@
     </dependencies>
 
     <build>
+        <!-- Release-Name wie in README/Modrinth: ChristmasSeason-x.y.z.jar -->
+        <finalName>ChristmasSeason-${project.version}</finalName>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>

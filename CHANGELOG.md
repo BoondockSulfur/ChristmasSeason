@@ -26,6 +26,10 @@ One JAR now covers Minecraft 1.21.x **and** the year-based 26.x versions (`api-v
 ### Fixed
 - Literal `&` in messages is no longer mangled into `§` ("Wichtel & Elfen" was logged as "Wichtel § Elfen") - only valid color codes like `&6` are translated
 - Console log messages (`log.*` keys) no longer contain raw `§` color codes
+- **Restore lifecycle hardening** (found in pre-release review): `/xmas off` twice no longer starts two competing restores; `/xmas on` during a running restore no longer leaks the new database (which silently disabled snapshotting for the whole season); a scheduling failure mid-restore no longer leaves the completion hanging with an open database
+- **Folia: killed event mobs no longer clog the spawn caps** - entity-scheduler tasks are *retired* on Folia when the entity dies, so cleanup now runs via retired-callbacks; previously, after `maxPerWorld` mobs were killed by players, no new Wichtel/Elfen/Snowmen would ever spawn until `/xmas off` (verified with kill-wave test on Folia 1.21.11)
+- **Gift chests can no longer delete player chests**: gift chests carry a PersistentDataContainer marker; the lifetime task and cleanup only remove chests with that marker, and pending lifetime tasks are cancelled on stop
+- Language reload race fixed (a region thread could re-cache a message in the old language during `/xmas reload`)
 
 ### Compatibility note
 - Minimum is Minecraft **1.21.3** - on 1.21.1/1.21.2 the plugin fails with `IncompatibleClassChangeError` because `Biome` changed from enum to interface in 1.21.3 (this was already true for 2.x builds compiled against the 1.21.3 API; now verified and documented)

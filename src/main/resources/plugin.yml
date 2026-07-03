@@ -7,7 +7,7 @@ author: BoondockSulfur
 commands:
   xmas:
     description: Schaltet das Weihnachts-Event ein/aus
-    usage: /xmas <on|off|status|reload|biome|storm>
+    usage: /xmas <on|off|status|reload|biome|storm|debug>
     permission: xmas.admin
   xmasgift:
     description: Spawnt ein Geschenk an deiner Position

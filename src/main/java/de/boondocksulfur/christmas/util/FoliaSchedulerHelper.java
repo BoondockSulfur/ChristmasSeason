@@ -121,6 +121,23 @@ public class FoliaSchedulerHelper {
     }
 
     /**
+     * Wie runForEntityLater, aber mit retired-Callback: Auf Folia werden
+     * Entity-Scheduler-Tasks beim Entfernen der Entity verworfen (retired)
+     * und laufen NIE - Aufräumlogik (Tracking-Sets etc.) muss deshalb im
+     * retired-Callback passieren, sonst leaken die Einträge!
+     *
+     * @param retired Läuft, wenn die Entity vor Task-Ausführung entfernt wurde
+     */
+    public WrappedTask runForEntityLater(Entity entity, Runnable task, Runnable retired, long delayTicks) {
+        if (entity.isValid()) {
+            return foliaLib.getScheduler().runAtEntityLater(entity, task, retired, delayTicks);
+        }
+        // Entity ist schon weg - Aufräumlogik direkt ausführen
+        if (retired != null) retired.run();
+        return null;
+    }
+
+    /**
      * Runs a repeating task on the entity's scheduler.
      *
      * @param entity      The entity whose scheduler should execute the task
@@ -133,6 +150,18 @@ public class FoliaSchedulerHelper {
         if (entity.isValid()) {
             return foliaLib.getScheduler().runAtEntityTimer(entity, task, null, delayTicks, periodTicks);
         }
+        return null;
+    }
+
+    /**
+     * Wie runForEntityTimer, aber mit retired-Callback (siehe
+     * runForEntityLater mit retired) - für Aufräumlogik beim Entity-Tod.
+     */
+    public WrappedTask runForEntityTimer(Entity entity, Runnable task, Runnable retired, long delayTicks, long periodTicks) {
+        if (entity.isValid()) {
+            return foliaLib.getScheduler().runAtEntityTimer(entity, task, retired, delayTicks, periodTicks);
+        }
+        if (retired != null) retired.run();
         return null;
     }
 

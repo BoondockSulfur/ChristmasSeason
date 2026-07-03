@@ -19,10 +19,12 @@ import java.util.Map;
 public class LanguageManager {
 
     private final ChristmasSeason plugin;
-    private YamlConfiguration messages;
+    // FOLIA FIX: volatile - wird bei reload() vom Command-Thread neu zugewiesen,
+    // während Region-Threads lesen (sichere Publikation)
+    private volatile YamlConfiguration messages;
     // FOLIA FIX: ConcurrentHashMap - getMessage() wird auch aus Region-Tasks aufgerufen
     private final Map<String, String> cache = new java.util.concurrent.ConcurrentHashMap<>();
-    private String currentLanguage;
+    private volatile String currentLanguage;
 
     public LanguageManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -33,20 +35,25 @@ public class LanguageManager {
      * Lädt die Sprachdatei basierend auf der Config
      */
     public void loadLanguage() {
-        cache.clear();
-        currentLanguage = plugin.getConfig().getString("language", "de");
+        String language = plugin.getConfig().getString("language", "de");
 
         // Dateiname bestimmen
-        String fileName = "messages_" + currentLanguage + ".yml";
+        String fileName = "messages_" + language + ".yml";
         File langFile = new File(plugin.getDataFolder(), fileName);
 
-        plugin.getLogger().info("Loading language: " + currentLanguage);
+        plugin.getLogger().info("Loading language: " + language);
         plugin.getLogger().info("Language file path: " + langFile.getAbsolutePath());
         plugin.getLogger().info("File exists: " + langFile.exists() + ", Size: " + (langFile.exists() ? langFile.length() : "N/A") + " bytes");
 
+        // RELOAD-RACE FIX: Erst die neue Config KOMPLETT in eine lokale Variable
+        // bauen, dann atomar zuweisen, dann Cache leeren. Vorher konnte ein
+        // Region-Thread zwischen cache.clear() und der Neuzuweisung einen alten
+        // String in den frischen Cache schreiben (Key bliebe in falscher Sprache).
+        YamlConfiguration loaded;
+
         // Versuche die Datei zu laden
         if (langFile.exists() && langFile.length() > 0) {
-            messages = YamlConfiguration.loadConfiguration(langFile);
+            loaded = YamlConfiguration.loadConfiguration(langFile);
 
             // Defaults aus JAR setzen
             InputStream defConfigStream = plugin.getResource(fileName);
@@ -54,24 +61,24 @@ public class LanguageManager {
                 YamlConfiguration defConfig = YamlConfiguration.loadConfiguration(
                     new InputStreamReader(defConfigStream, StandardCharsets.UTF_8)
                 );
-                messages.setDefaults(defConfig);
+                loaded.setDefaults(defConfig);
                 plugin.getLogger().info("Loaded defaults from JAR resource: " + fileName);
             } else {
                 plugin.getLogger().warning("Could not load defaults from JAR for: " + fileName);
             }
 
-            int keyCount = messages.getKeys(true).size();
-            plugin.getLogger().info("Language loaded from disk: " + currentLanguage + " (" + keyCount + " keys)");
+            int keyCount = loaded.getKeys(true).size();
+            plugin.getLogger().info("Language loaded from disk: " + language + " (" + keyCount + " keys)");
         } else {
             // Fallback: Lade direkt aus JAR wenn Datei nicht existiert
             plugin.getLogger().warning("Language file not found on disk, loading from JAR: " + fileName);
             InputStream defConfigStream = plugin.getResource(fileName);
             if (defConfigStream != null) {
-                messages = YamlConfiguration.loadConfiguration(
+                loaded = YamlConfiguration.loadConfiguration(
                     new InputStreamReader(defConfigStream, StandardCharsets.UTF_8)
                 );
-                int keyCount = messages.getKeys(true).size();
-                plugin.getLogger().info("Language loaded from JAR: " + currentLanguage + " (" + keyCount + " keys)");
+                int keyCount = loaded.getKeys(true).size();
+                plugin.getLogger().info("Language loaded from JAR: " + language + " (" + keyCount + " keys)");
             } else {
                 plugin.getLogger().severe("Language file not found anywhere: " + fileName);
                 plugin.getLogger().severe("Available resources in plugin JAR:");
@@ -84,9 +91,14 @@ public class LanguageManager {
                 } catch (Exception e) {
                     plugin.getLogger().severe("Could not list resources: " + e.getMessage());
                 }
-                messages = new YamlConfiguration(); // Leere Config als Notfall
+                loaded = new YamlConfiguration(); // Leere Config als Notfall
             }
         }
+
+        // Atomar publizieren, DANN Cache leeren (Reihenfolge wichtig, s.o.)
+        this.currentLanguage = language;
+        this.messages = loaded;
+        cache.clear();
     }
 
     /**

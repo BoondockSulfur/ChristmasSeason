@@ -30,10 +30,19 @@ public class GiftManager {
     // FOLIA FIX: ConcurrentHashMap.newKeySet() - add/remove laufen auf Location-Scheduler-Threads
     private final Set<Location> trackedGifts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    // SAFETY FIX: Lifetime-Tasks tracken, damit stop() sie canceln kann -
+    // verwaiste Tasks (bis 300s) könnten sonst nach /xmas off noch feuern
+    private final Map<Location, WrappedTask> giftLifetimeTasks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // SAFETY FIX: PDC-Marker identifiziert UNSERE Kisten eindeutig - der Lifetime-
+    // Task darf niemals eine Spielerkiste löschen, die an derselben Position steht
+    private final org.bukkit.NamespacedKey giftChestKey;
+
     public GiftManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
         this.scheduler = plugin.getFoliaScheduler();
+        this.giftChestKey = new org.bukkit.NamespacedKey(plugin, "gift-chest");
     }
 
     public void start() {
@@ -48,6 +57,13 @@ public class GiftManager {
             if (task != null) task.cancel();
         }
         playerSpawnTasks.clear();
+
+        // SAFETY FIX: Lifetime-Tasks canceln - dürfen nach stop() nicht mehr feuern
+        for (WrappedTask task : giftLifetimeTasks.values()) {
+            if (task != null) task.cancel();
+        }
+        giftLifetimeTasks.clear();
+
         trackedGifts.clear();
     }
 
@@ -111,9 +127,17 @@ public class GiftManager {
         Iterator<Location> it = trackedGifts.iterator();
         while (it.hasNext()) {
             Location loc = it.next();
+
+            // SAFETY FIX: Zugehörigen Lifetime-Task canceln
+            WrappedTask lt = giftLifetimeTasks.remove(loc);
+            if (lt != null) lt.cancel();
+
             scheduler.runAtLocation(loc, () -> {
                 Block block = loc.getBlock();
-                if (block.getType() == Material.CHEST) {
+                // SAFETY FIX: PDC-Marker prüfen - nur UNSERE Kisten löschen
+                if (block.getType() == Material.CHEST
+                        && block.getState() instanceof Chest c
+                        && c.getPersistentDataContainer().has(giftChestKey, org.bukkit.persistence.PersistentDataType.BYTE)) {
                     block.setType(Material.AIR);
                 }
             });
@@ -153,6 +177,10 @@ public class GiftManager {
         Chest chest = (Chest) state;
 
         chest.customName(lang.getComponent("entity.gift-chest"));
+        // SAFETY FIX: PDC-Marker setzen, damit der Lifetime-Task sicher erkennen
+        // kann, ob an der Position noch UNSERE Kiste steht (nicht eine vom Spieler)
+        chest.getPersistentDataContainer().set(giftChestKey,
+                org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
         chest.update();
 
         fillGiftInventory(chest.getBlockInventory());
@@ -161,16 +189,25 @@ public class GiftManager {
         Location chestLoc = b.getLocation();
         trackedGifts.add(chestLoc);
 
-        final Block placed = b;
         int lifetime = plugin.getConfig().getInt("gifts.lifetimeSeconds", 300);
-        scheduler.runAtLocationLater(chestLoc, () -> {
-            if (placed.getType() == Material.CHEST) {
-                try { placed.setType(Material.AIR, false); } catch (Throwable ignored) { placed.setType(Material.AIR); }
-            }
+        WrappedTask lifetimeTask = scheduler.runAtLocationLater(chestLoc, () -> {
+            giftLifetimeTasks.remove(chestLoc);
             // LEAK FIX: Immer aus Tracking entfernen - auch wenn die Kiste
             // inzwischen von Spielern abgebaut wurde (sonst wächst das Set endlos)
             trackedGifts.remove(chestLoc);
+
+            // SAFETY FIX: Nur löschen, wenn dort wirklich noch UNSERE Kiste steht
+            // (PDC-Marker) - niemals eine Spielerkiste an derselben Position!
+            Block current = chestLoc.getBlock();
+            if (current.getType() == Material.CHEST
+                    && current.getState() instanceof Chest c
+                    && c.getPersistentDataContainer().has(giftChestKey, org.bukkit.persistence.PersistentDataType.BYTE)) {
+                try { current.setType(Material.AIR, false); } catch (Throwable ignored) { current.setType(Material.AIR); }
+            }
         }, lifetime * 20L);
+        if (lifetimeTask != null) {
+            giftLifetimeTasks.put(chestLoc, lifetimeTask);
+        }
 
         if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true)) {
             Bukkit.broadcast(lang.getComponent("broadcast.gift-spawned",

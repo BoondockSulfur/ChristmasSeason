@@ -232,6 +232,10 @@ public class BiomeSnowManager {
     // deaktiviert (Server-Freeze durch Referenzwelt-Laden); Restore läuft über
     // den SQLite-Snapshot (restoreALLAsync)
 
+    // LIFECYCLE FIX: Verhindert parallele Restores (/xmas off doppelt) und
+    // signalisiert completionCheck, ob 'db' noch die eigene Instanz ist
+    private final java.util.concurrent.atomic.AtomicBoolean restoreRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     /** Snapshot vollständig und asynchron zurückspielen (für /xmas off) */
     public void restoreALLAsync(int perTick) {
         if (db == null) {
@@ -239,6 +243,13 @@ public class BiomeSnowManager {
             plugin.getLogger().warning(plugin.getLanguageManager().get("log.biome.no-snapshot-available"));
             plugin.getLogger().warning(plugin.getLanguageManager().get("log.biome.snapshot-disabled-or-error"));
             plugin.getLogger().warning(plugin.getLanguageManager().get("log.biome.solution-enable-snapshot"));
+            return;
+        }
+
+        // LIFECYCLE FIX: Reentrancy-Guard - zwei parallele Restores würden sich
+        // gegenseitig die Chunks aus der DB löschen und die DB doppelt schließen
+        if (!restoreRunning.compareAndSet(false, true)) {
+            plugin.getLogger().warning("Biome-Restore läuft bereits - zweiter Aufruf ignoriert.");
             return;
         }
 
@@ -263,7 +274,8 @@ public class BiomeSnowManager {
                 plugin.getLogger().warning(plugin.getLanguageManager().get("log.biome.snapshot-timing-question"));
                 plugin.getLogger().info(plugin.getLanguageManager().get("log.biome.separator-line"));
                 database.close();
-                db = null;
+                if (db == database) db = null;
+                restoreRunning.set(false);
                 return;
             }
 
@@ -315,9 +327,14 @@ public class BiomeSnowManager {
                     }
                     database.close();
                     plugin.debug("Datenbank geschlossen nach Restore");
-                    db = null;
+                    // LIFECYCLE FIX: 'db' nur nullen, wenn es noch UNSERE Instanz ist -
+                    // '/xmas on' während des Restores hat evtl. schon eine neue DB
+                    // geöffnet, die sonst leaken und snapshotIfAbsent() lahmlegen würde!
+                    if (db == database) db = null;
                 } catch (Exception e) {
                     plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.biome.error-clearing-db", e.getMessage()));
+                } finally {
+                    restoreRunning.set(false);
                 }
             };
 
@@ -365,6 +382,10 @@ public class BiomeSnowManager {
                         org.bukkit.Location schedulerLoc = new org.bukkit.Location(Bukkit.getWorld(coords.world),
                             (chunkX << 4) + 8, 64, (chunkZ << 4) + 8);
 
+                        // COMPLETION FIX: Wirft das Scheduling selbst (z.B. Welt entlädt,
+                        // Plugin disabled mitten im Restore), muss der Chunk trotzdem als
+                        // 'finished' zählen - sonst feuert completionCheck nie!
+                        try {
                         scheduler.runAtLocation(schedulerLoc, () -> {
                             boolean success = false;
                             try {
@@ -414,6 +435,12 @@ public class BiomeSnowManager {
                                 completionCheck.run();
                             }
                         });
+                        } catch (Exception schedulingError) {
+                            plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.biome.chunk-error", chunkX, chunkZ, schedulingError.getMessage()));
+                            errors.incrementAndGet();
+                            finished.incrementAndGet();
+                            completionCheck.run();
+                        }
                     }
 
                     // Fortschritt alle 50 Chunks loggen
@@ -433,12 +460,21 @@ public class BiomeSnowManager {
                     if (restoreTask[0] != null) {
                         restoreTask[0].cancel();
                     }
+                    // COMPLETION FIX: Nie eingeplante Chunks als Fehler verbuchen,
+                    // sonst wartet completionCheck ewig und die DB bleibt offen
+                    int neverScheduled = totalChunks - scheduled[0];
+                    if (neverScheduled > 0) {
+                        errors.addAndGet(neverScheduled);
+                        finished.addAndGet(neverScheduled);
+                    }
+                    completionCheck.run();
                 }
             }, 1L, 1L);
 
         } catch (SQLException e) {
             plugin.getLogger().severe(plugin.getLanguageManager().getMessage("log.biome.error-retrieving-data", e.getMessage()));
             e.printStackTrace();
+            restoreRunning.set(false);
         }
     }
 
