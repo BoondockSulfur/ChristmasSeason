@@ -35,7 +35,7 @@ public class UpdateChecker {
 
     // WICHTIG: Diese Werte müssen angepasst werden wenn das Plugin veröffentlicht wird!
     private static final String MODRINTH_SLUG = "christmas-season"; // TODO: Ersetze mit echtem Modrinth-Slug
-    private static final String GITHUB_REPO = "BoondockSulfur/ChistmasSeason"; // Hinweis: Repo-Name hat historischen Tippfehler; GitHub-Redirect greift nach Umbenennung
+    private static final String GITHUB_REPO = "BoondockSulfur/ChristmasSeason";
 
     private static final String MODRINTH_API = "https://api.modrinth.com/v2/project/" + MODRINTH_SLUG + "/version";
     private static final String GITHUB_API = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest";
