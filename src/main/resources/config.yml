@@ -1,32 +1,77 @@
+# ChristmasSeason configuration
+# Language: en = English, de = German (messages_<lang>.yml in the plugin folder)
 active: false
+# Primary snow world (kept for compatibility) ...
 snowWorld: "world"
-language: "de"  # de = Deutsch, en = English
+# ... plus any number of additional snow worlds
+snowWorlds: []
+language: "en"
+
+# Automatic activation by date (month-day, year-spanning windows are fine).
+# The schedule only acts on transitions, so a manual /xmas off during the window
+# stays off until the next server start or the next transition.
+schedule:
+  enabled: false
+  start: "12-01"
+  end: "01-06"
+  timezone: ""              # e.g. Europe/Berlin; empty = server time zone (also used by the advent calendar)
+  checkIntervalMinutes: 5
+  autoDeactivate: true
+
+announcements:
+  onActivate: true          # broadcast when the event starts
+  onDeactivate: true
 
 biome:
   enabled: true
+  # Winter biome applied around players. Vanilla names or namespaced keys
+  # (e.g. "terralith:alpine_grove") are accepted.
   target: "SNOWY_PLAINS"
+  # Only surface biomes between these Y levels are changed and restored (caves stay untouched).
+  # Applies to newly converted chunks; existing snapshots keep the range they were taken with.
+  changeMinY: 50
+  changeMaxY: 200
 
-  # PERFORMANCE: SQLite-basiertes Snapshot-System (v1.3+)
-  # Ersetzt das alte YAML-System mit folgenden Vorteilen:
-  # - Unbegrenzte Chunk-Anzahl (kein 2000-Limit!)
-  # - Komprimierte Speicherung (~5-10 MB statt 156 MB für 10k Chunks)
-  # - Schnelles Laden/Speichern (Millisekunden statt Sekunden)
-  # - Kein Memory-Overhead beim Laden
-  enableSnapshot: true      # false = kein automatisches Restore möglich!
+  # SQLite snapshot of the original biomes (plugins/ChristmasSeason/biome-snapshot.db).
+  # false = no automatic restore on /xmas off!
+  enableSnapshot: true
 
   playerBubble:
     enabled: true
-    radiusChunks: 2         # Radius in Chunks (2 = 5x5 = 25 chunks)
-    refreshClient: true     # Client-Refresh für sofortige Biom-Updates
-    tickIntervalTicks: 40   # Wie oft in Ticks (40 = 2 Sekunden)
-    perTickBudget: 12       # Max Chunks pro Tick (12 = schneller, 6 = smooth, 3 = sicher bei TPS-Problemen)
+    radiusChunks: 2         # radius in chunks (2 = 5x5 = 25 chunks around each player)
+    refreshClient: true     # resend chunks so clients see the new biome immediately
+    tickIntervalTicks: 40   # how often the bubble runs (40 = every 2 seconds)
+    perTickBudget: 12       # max chunks per run (12 = fast, 6 = smooth, 3 = safe on a struggling server)
+
+  # Leave these areas untouched by the biome bubble (lobbies, build areas, ...)
+  exclude:
+    areas: []               # - {world: world, x1: -100, z1: -100, x2: 100, z2: 100}
+    worldGuardRegions: []   # - spawn   or   - world:spawn
+    griefPreventionClaims: false
+
+  # Put snow layers on the surface and freeze still water immediately when a chunk is
+  # converted (otherwise snow only accumulates slowly during the storm)
+  instantSnow:
+    enabled: false
+    coverage: 0.8           # share of surface blocks that get a snow layer
+    freezeWater: true
+
+  # /xmas biome convert-all: default radius in chunks around the world spawn
+  convertAll:
+    radiusChunks: 64
+
   restore:
-    perTick: 4              # Chunks pro Tick bei /xmas off
+    perTick: 4              # chunks per tick during /xmas off (also the concurrency of compare/fix-diff)
+    # Snow layers and plain ice that formed in the winter biome are removed on restore
+    # where the original biome is not naturally snowy/icy. This also affects blocks
+    # players placed in that area - disable if that is a problem on your server.
+    removeSnowLayers: true
+    removeIce: true
 
 snowstorm:
   enabled: true
   forceWeatherTicks: 200
-  mode: auto
+  mode: auto                # auto = alternate on/off phases, manual = always on, none = weather untouched
   auto:
     onSeconds: 150
     offSeconds: 45
@@ -52,7 +97,26 @@ gifts:
   chancePerInterval: 0.35
   lifetimeSeconds: 300
   broadcastOnSpawn: true
-  protectChests: true     # Geschenk-Kisten vor Hoppern und Explosionen schützen
+  broadcastOnOpen: false    # announce who opened a gift first
+  protectChests: true       # protect gift chests from hoppers and explosions
+  effects:
+    spawnSound: "block.bell.use"        # sound key, empty = none
+    spawnParticles: true
+    openSound: "entity.player.levelup"
+    openParticles: true
+  contents:
+    commonItems: "4-7"      # number of picks from the common table
+    extraItems: "1-3"
+    rareChance: 0.6         # chance for one rare item
+    secondRareChance: 0.25  # chance for a second rare item
+  # Loot entries: "MATERIAL:amount" or the extended form
+  #   - material: DIAMOND_SWORD
+  #     amount: 1            # or "1-3"
+  #     weight: 2            # relative pick chance (default 1)
+  #     name: "&bIcicle"
+  #     lore: ["&7Found under the tree"]
+  #     enchantments: {sharpness: 2}
+  #     glow: true
   lootTables:
     common:
       - COOKIE:8
@@ -81,11 +145,19 @@ gifts:
       - NETHERITE_SCRAP:1
       - NAME_TAG:1
 
+# Per-player spawn caps (0 = disabled): counts matching mobs within spawning.nearRadius blocks
+spawning:
+  nearRadius: 48
+
 wichtel:
   enabled: true
   spawnIntervalSeconds: 45
   maxPerWorld: 6
+  maxNearPlayer: 0
   stealRadius: 3.2
+  # true  = Wichtel and elves only collect the plugin's own decoration items
+  # false = they also collect other dropped items (never items dropped by players or death drops)
+  stealOnlyDecorations: true
   lifetimeSeconds: 240
   world: "world"
 
@@ -93,25 +165,68 @@ elves:
   enabled: true
   spawnIntervalSeconds: 60
   maxPerWorld: 4
-
-# Region Protection (WorldGuard & GriefPrevention)
-# Verhindert Spawns in geschützten Bereichen/Claims (Soft-Dependency)
-regionIntegration:
-  enabled: true
-
-  # WorldGuard Settings
-  worldGuard:
-    allowInProtected: false   # true = Spawns in WG-Regionen erlauben
-
-  # GriefPrevention Settings
-  griefPrevention:
-    allowInClaims: false      # true = Spawns in Claims erlauben
-    allowInAdminClaims: false # true = Spawns in Admin-Claims erlauben
+  maxNearPlayer: 0
+  # lifetimeSeconds and world default to the wichtel values
 
 snowmen:
   enabled: true
   spawnIntervalSeconds: 45
   maxPerWorld: 6
+  maxNearPlayer: 0
+  lifetimeSeconds: 600      # 0 = snowmen stay until /xmas off
   attackIntervalSeconds: 8
   attackChance: 0.15
   range: 12.0
+
+# Region protection (WorldGuard & GriefPrevention, soft dependencies)
+regionIntegration:
+  enabled: true
+  worldGuard:
+    allowInProtected: false   # true = allow spawns inside WorldGuard regions
+  griefPrevention:
+    allowInClaims: false      # true = allow spawns inside claims
+    allowInAdminClaims: false # true = allow spawns inside admin claims
+
+# Advent calendar: /advent opens today's door once per player and day
+advent:
+  enabled: true
+  month: 12
+  firstDay: 1
+  lastDay: 24
+  allowCatchUp: false       # true = missed doors can be opened later (/advent <day>)
+  requireActive: false      # true = only while the event is active
+  broadcastClaims: false
+  sound: "entity.player.levelup"
+  particles: true
+  default:
+    items:                  # given every day (loot entry format, see gifts)
+      - COOKIE:4
+    randomPool:             # one weighted pick per day
+      - material: DIAMOND
+        amount: 1
+        weight: 1
+      - material: EMERALD
+        amount: "2-4"
+        weight: 3
+      - material: GOLDEN_APPLE
+        amount: 1
+        weight: 2
+      - material: SNOWBALL
+        amount: 16
+        weight: 4
+    commands: []            # console commands, %player% and %day% are replaced
+  # Per-day overrides (replace the defaults for that day)
+  days:
+    "24":
+      items:
+        - material: ENCHANTED_GOLDEN_APPLE
+          amount: 1
+          name: "&6Christmas Apple"
+          lore: ["&7Merry Christmas!"]
+      randomPool: []
+      commands: []
+
+# Update checker (Modrinth, GitHub fallback) - one request on startup, then on demand
+updateChecker:
+  enabled: true
+  notifyOps: true             # tell operators about updates when they join

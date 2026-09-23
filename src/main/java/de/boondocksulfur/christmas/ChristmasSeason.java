@@ -1,15 +1,36 @@
 package de.boondocksulfur.christmas;
 
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Sound;
+import org.bukkit.World;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import de.boondocksulfur.christmas.cmd.AdventCommand;
 import de.boondocksulfur.christmas.cmd.XmasCommand;
 import de.boondocksulfur.christmas.cmd.XmasGiftCommand;
 import de.boondocksulfur.christmas.cmd.XmasTabCompleter;
+import de.boondocksulfur.christmas.integration.PlaceholderIntegration;
+import de.boondocksulfur.christmas.integration.RegionIntegration;
 import de.boondocksulfur.christmas.listener.*;
 import de.boondocksulfur.christmas.manager.*;
 import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
+import de.boondocksulfur.christmas.util.Registries;
+import de.boondocksulfur.christmas.util.UpdateChecker;
 
+import java.io.File;
+import java.time.ZoneId;
+import java.util.*;
+import java.util.function.Predicate;
+
+/**
+ * ChristmasSeason - winter biomes, snowstorms, gifts, decorations and festive mobs
+ * for Paper, Purpur and Folia.
+ */
 public class ChristmasSeason extends JavaPlugin {
 
     private FoliaSchedulerHelper foliaScheduler;
@@ -21,28 +42,29 @@ public class ChristmasSeason extends JavaPlugin {
     private WichtelManager wichtelManager;
     private SnowmanManager snowmanManager;
     private BiomeSnapshotBackup backupManager;
-    private de.boondocksulfur.christmas.util.UpdateChecker updateChecker;
+    private UpdateChecker updateChecker;
     private BiomeCompare biomeCompare;
-    private de.boondocksulfur.christmas.integration.RegionIntegration regionIntegration;
+    private RegionIntegration regionIntegration;
+    private EventController eventController;
+    private LootManager lootManager;
+    private StatsManager statsManager;
+    private AdventManager adventManager;
+    private PlaceholderIntegration placeholderIntegration;
 
-    // Debug-Modus für ausführliche Logs
-    private boolean debugMode = false;
-    private boolean verboseDebugMode = false; // Noch ausführlichere Logs (Biome-Snapshot Details)
+    private volatile boolean debugMode = false;
+    private volatile boolean verboseDebugMode = false;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        validateConfig();
 
-        // Sprachdateien extrahieren falls nicht vorhanden
         saveResourceIfAbsent("messages_de.yml");
         saveResourceIfAbsent("messages_en.yml");
 
-        // Eine geteilte FoliaLib-Instanz für alle Manager
         this.foliaScheduler    = new FoliaSchedulerHelper(this);
         this.languageManager   = new LanguageManager(this);
         this.backupManager     = new BiomeSnapshotBackup(this);
-        this.updateChecker     = new de.boondocksulfur.christmas.util.UpdateChecker(this);
+        this.updateChecker     = new UpdateChecker(this);
         this.biomeCompare      = new BiomeCompare(this);
         this.snowstormManager  = new SnowstormManager(this);
         this.biomeSnowManager  = new BiomeSnowManager(this);
@@ -50,15 +72,24 @@ public class ChristmasSeason extends JavaPlugin {
         this.giftManager       = new GiftManager(this);
         this.wichtelManager    = new WichtelManager(this);
         this.snowmanManager    = new SnowmanManager(this);
-        this.regionIntegration = new de.boondocksulfur.christmas.integration.RegionIntegration(this);
+        this.regionIntegration = new RegionIntegration(this);
+        this.eventController   = new EventController(this);
+        this.lootManager       = new LootManager(this);
+        this.statsManager      = new StatsManager(this);
+        this.adventManager     = new AdventManager(this);
+        validateConfig();
 
         getCommand("xmas").setExecutor(new XmasCommand(this));
         getCommand("xmas").setTabCompleter(new XmasTabCompleter(this));
         getCommand("xmasgift").setExecutor(new XmasGiftCommand(this));
+        AdventCommand adventCommand = new AdventCommand(this);
+        getCommand("advent").setExecutor(adventCommand);
+        getCommand("advent").setTabCompleter(adventCommand);
 
-        Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
         Bukkit.getPluginManager().registerEvents(new GiftProtectionListener(this), this);
-        Bukkit.getPluginManager().registerEvents(new OrphanedMobCleanupListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new PlayerPlacementListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new TrackedObjectListener(this), this);
         Bukkit.getPluginManager().registerEvents(new WichtelTargetBlocker(), this);
         Bukkit.getPluginManager().registerEvents(new SnowmanDamageListener(), this);
         Bukkit.getPluginManager().registerEvents(new MobProtectionListener(), this);
@@ -66,34 +97,50 @@ public class ChristmasSeason extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new PlayerSnowBubbleListener(this), this);
         Bukkit.getPluginManager().registerEvents(new UpdateNotificationListener(this), this);
 
-        // bStats Metrics
         new org.bstats.bukkit.Metrics(this, 30930);
 
-        // Startup-Sicherheitsprüfungen (DB-Integrität, Emergency-Backups)
         performStartupSafetyChecks();
 
         if (isActive()) startFeatures();
 
-        // Auto-Update-Check beim Server-Start
+        eventController.startSchedule();
         updateChecker.startAutoCheck();
+        hookPlaceholderApi();
 
-        getLogger().info("ChristmasSeason enabled.");
+        getLogger().info("ChristmasSeason " + getPluginMeta().getVersion() + " enabled.");
     }
 
     @Override
     public void onDisable() {
-        // NOTFALL-BACKUP: Wenn Server stoppt während xmas ON aktiv ist!
-        if (isActive() && backupManager != null) {
-            getLogger().warning("Server wird gestoppt während ChristmasSeason AKTIV ist!");
-            getLogger().warning("Erstelle Notfall-Backup der Biome-Datenbank...");
-            backupManager.createEmergencyBackup();
+        boolean wasActive = isActive();
+
+        if (eventController != null) eventController.stopSchedule();
+        if (statsManager != null) statsManager.save();
+        if (adventManager != null) adventManager.save();
+        if (placeholderIntegration != null) {
+            try { placeholderIntegration.unregister(); } catch (Throwable ignored) {}
         }
 
+        // Close the database first so the emergency copy below is complete (WAL flushed)
         stopFeatures();
+
+        if (wasActive && backupManager != null) {
+            languageManager.logWarning("log.startup.stopped-while-active");
+            backupManager.createEmergencyBackup();
+        }
     }
+
+    // ------------------------------------------------------------ lifecycle
 
     public boolean isActive() { return getConfig().getBoolean("active", false); }
 
+    /** Persists the active flag ({@code /xmas on|off}). */
+    public void setActive(boolean active) {
+        getConfig().set("active", active);
+        saveConfig();
+    }
+
+    /** Starts every manager, the per-player tasks of online players and adopts existing event objects. */
     public void startFeatures() {
         snowstormManager.start();
         biomeSnowManager.start();
@@ -102,24 +149,47 @@ public class ChristmasSeason extends JavaPlugin {
         wichtelManager.start();
         snowmanManager.start();
 
-        // FOLIA FIX: Starte Player-basierte Tasks für bereits online Spieler
-        // (PlayerJoinEvent wird nur für neue Joins gefeuert, nicht für bereits online Spieler!)
-        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
-            biomeSnowManager.startPlayerTracking(player);
-            wichtelManager.startPlayerSpawning(player);
-            snowmanManager.startPlayerSpawning(player);
-            giftManager.startPlayerSpawning(player);
-            decorationManager.startPlayerSpawning(player);
-            debug("Player-Tracking für bereits online Spieler gestartet: " + player.getName());
+        // PlayerJoinEvent only fires for new joins - cover players who are already online
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            startPlayerTasks(player);
         }
+
+        // Objects that survived a restart or reload get their tracking, caps and lifetimes back
+        giftManager.adoptLoaded();
+        decorationManager.adoptLoaded();
+        wichtelManager.adoptLoaded();
+        snowmanManager.adoptLoaded();
     }
+
+    /** Starts the per-player timers (biome bubble, spawns) for one player. */
+    public void startPlayerTasks(Player player) {
+        biomeSnowManager.startPlayerTracking(player);
+        wichtelManager.startPlayerSpawning(player);
+        snowmanManager.startPlayerSpawning(player);
+        giftManager.startPlayerSpawning(player);
+        decorationManager.startPlayerSpawning(player);
+    }
+
+    /** Stops the per-player timers for one player. */
+    public void stopPlayerTasks(Player player) {
+        biomeSnowManager.stopPlayerTracking(player);
+        wichtelManager.stopPlayerSpawning(player);
+        snowmanManager.stopPlayerSpawning(player);
+        giftManager.stopPlayerSpawning(player);
+        decorationManager.stopPlayerSpawning(player);
+    }
+
     public void stopFeatures() {
         stopFeatures(true);
     }
 
-    /** Stop Features mit optionalem Biome-DB schließen */
+    /**
+     * Stops every manager.
+     *
+     * @param closeBiomeDatabase {@code false} keeps the snapshot database open for a following restore
+     */
     public void stopFeatures(boolean closeBiomeDatabase) {
-        // FIX: Null-Checks für den Fall dass onEnable() fehlgeschlagen ist
+        // Null checks: onEnable() may have failed half-way
         if (snowstormManager != null) snowstormManager.stop();
         if (biomeSnowManager != null) biomeSnowManager.stop(closeBiomeDatabase);
         if (decorationManager != null) decorationManager.stop();
@@ -127,54 +197,157 @@ public class ChristmasSeason extends JavaPlugin {
         if (wichtelManager != null) wichtelManager.stop();
         if (snowmanManager != null) snowmanManager.stop();
     }
+
+    /** {@code /xmas reload}: reloads config and language, restarts all managers. */
     public void reloadAll() {
         reloadConfig();
-        validateConfig();
         languageManager.reload();
+        lootManager.reload();
+        validateConfig();
         stopFeatures();
         if (isActive()) startFeatures();
+        eventController.startSchedule();
+    }
+
+    // ------------------------------------------------------------ worlds
+
+    /**
+     * Names of all snow worlds: {@code snowWorlds} list plus the legacy {@code snowWorld}
+     * string, duplicates removed, order preserved (first = primary).
+     */
+    public List<String> getSnowWorldNames() {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        String single = getConfig().getString("snowWorld");
+        if (single != null && !single.isBlank()) names.add(single);
+        names.addAll(getConfig().getStringList("snowWorlds"));
+        if (names.isEmpty()) names.add("world");
+        return new ArrayList<>(names);
+    }
+
+    /** @return the first configured snow world name (used for backups and placeholders) */
+    public String getPrimarySnowWorld() {
+        return getSnowWorldNames().get(0);
+    }
+
+    /** @return loaded snow worlds */
+    public List<World> getSnowWorlds() {
+        List<World> worlds = new ArrayList<>();
+        for (String name : getSnowWorldNames()) {
+            World w = Bukkit.getWorld(name);
+            if (w != null) worlds.add(w);
+        }
+        return worlds;
+    }
+
+    public boolean isSnowWorld(World world) {
+        return world != null && getSnowWorldNames().contains(world.getName());
+    }
+
+    // ------------------------------------------------------------ helpers
+
+    /** Time zone for the schedule and the advent calendar ({@code schedule.timezone}, default: server). */
+    public ZoneId getZoneId() {
+        String tz = getConfig().getString("schedule.timezone", "");
+        if (tz == null || tz.isBlank()) return ZoneId.systemDefault();
+        try {
+            return ZoneId.of(tz);
+        } catch (Exception e) {
+            languageManager.logWarning("log.config.invalid-timezone", tz);
+            return ZoneId.systemDefault();
+        }
+    }
+
+    /** Resolves a sound key such as {@code block.bell.use}; empty/unknown -> {@code null}. */
+    public Sound resolveSound(String key) {
+        if (key == null || key.isBlank() || key.equalsIgnoreCase("none")) return null;
+        try {
+            NamespacedKey k = key.contains(":") ? NamespacedKey.fromString(key.toLowerCase()) : NamespacedKey.minecraft(key.toLowerCase());
+            if (k == null) return null;
+            Sound sound = RegistryAccess.registryAccess().getRegistry(RegistryKey.SOUND_EVENT).get(k);
+            if (sound == null) languageManager.logWarning("log.config.unknown-sound", key);
+            return sound;
+        } catch (IllegalArgumentException e) {
+            languageManager.logWarning("log.config.unknown-sound", key);
+            return null;
+        }
     }
 
     /**
-     * Prüft die config.yml auf typische Fehler und warnt im Log.
-     * Ungültige Einträge werden zur Laufzeit ohnehin übersprungen -
-     * ohne Warnung rätselt man aber, warum ein Item nie droppt.
+     * Per-player spawn cap: {@code true} if at least {@code configKey} matching entities are
+     * already within {@code spawning.nearRadius} blocks of the player. A value of 0 disables
+     * the check (only the world cap applies). Must run on the player's thread.
+     */
+    public boolean isNearCapReached(Player player, String configKey, Predicate<Entity> matcher) {
+        int max = getConfig().getInt(configKey, 0);
+        if (max <= 0) return false;
+        double r = Math.max(8, getConfig().getInt("spawning.nearRadius", 48));
+        int count = 0;
+        for (Entity e : player.getNearbyEntities(r, r, r)) {
+            if (matcher.test(e) && ++count >= max) return true;
+        }
+        return false;
+    }
+
+    private void hookPlaceholderApi() {
+        if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") == null) return;
+        try {
+            placeholderIntegration = new PlaceholderIntegration(this);
+            placeholderIntegration.register();
+            getLogger().info("PlaceholderAPI expansion registered (%xmas_...%)");
+        } catch (Throwable t) {
+            getLogger().warning("PlaceholderAPI detected but the expansion could not be registered: " + t.getMessage());
+            placeholderIntegration = null;
+        }
+    }
+
+    // ------------------------------------------------------------ validation
+
+    /**
+     * Warns about typical config mistakes. Invalid entries are skipped at runtime anyway,
+     * but without a warning nobody knows why an item never drops.
      */
     private void validateConfig() {
         validateMaterialList("decoration.drops");
-        validateMaterialList("gifts.lootTables.common");
-        validateMaterialList("gifts.lootTables.extra");
-        validateMaterialList("gifts.lootTables.rare");
+        for (String path : new String[]{"gifts.lootTables.common", "gifts.lootTables.extra", "gifts.lootTables.rare",
+                "advent.default.items", "advent.default.randomPool"}) {
+            if (lootManager != null) lootManager.getList(path); // parses and warns
+        }
+        for (String name : getSnowWorldNames()) {
+            if (Bukkit.getWorld(name) == null) {
+                languageManager.logWarning("log.config.world-not-found", name);
+            }
+        }
 
         String biomeName = getConfig().getString("biome.target", "SNOWY_PLAINS");
-        try {
-            if (de.boondocksulfur.christmas.util.Registries.biomes().get(org.bukkit.NamespacedKey.minecraft(biomeName.toLowerCase())) == null) {
-                getLogger().warning("config.yml: Unbekanntes Biom in biome.target: '" + biomeName + "' - es wird SNOWY_PLAINS verwendet.");
+        if (Registries.biomeByName(biomeName) == null) {
+            languageManager.logWarning("log.config.unknown-target-biome", biomeName);
+        }
+    }
+
+    private void validateMaterialList(String path) {
+        for (String entry : getConfig().getStringList(path)) {
+            String matName = entry.split(":")[0];
+            if (org.bukkit.Material.matchMaterial(matName) == null) {
+                languageManager.logWarning("log.config.unknown-material", matName, path);
             }
-        } catch (Exception e) {
-            getLogger().warning("config.yml: Ungültiger Biom-Name in biome.target: '" + biomeName + "' - es wird SNOWY_PLAINS verwendet.");
         }
     }
 
     /**
-     * Führt Sicherheitsprüfungen beim Start durch:
-     * - DB-Integritätscheck
-     * - Warnung bei active:true ohne DB
-     * - Erkennung von Emergency-Backups (vorheriger Crash)
+     * Startup checks: warns when the event is active without a database, runs an SQLite
+     * integrity check and points at emergency backups from a previous stop.
      */
     private void performStartupSafetyChecks() {
-        java.io.File dbFile = new java.io.File(getDataFolder(), "biome-snapshot.db");
+        File dbFile = new File(getDataFolder(), "biome-snapshot.db");
 
-        // Check 1: active:true aber keine DB → Warnung
         if (isActive() && !dbFile.exists() && getConfig().getBoolean("biome.enableSnapshot", true)) {
-            getLogger().warning("═══════════════════════════════════════════");
-            getLogger().warning(" WARNUNG: ChristmasSeason ist aktiv, aber keine Snapshot-DB vorhanden!");
-            getLogger().warning(" Biome wurden möglicherweise geändert und können nicht restored werden.");
-            getLogger().warning(" Prüfe: /xmas backup list (für verfügbare Backups)");
-            getLogger().warning("═══════════════════════════════════════════");
+            languageManager.logWarning("log.startup.separator");
+            languageManager.logWarning("log.startup.active-without-db-1");
+            languageManager.logWarning("log.startup.active-without-db-2");
+            languageManager.logWarning("log.startup.active-without-db-3");
+            languageManager.logWarning("log.startup.separator");
         }
 
-        // Check 2: DB-Integrität prüfen (falls DB existiert)
         if (dbFile.exists()) {
             try {
                 Class.forName("org.sqlite.JDBC");
@@ -184,120 +357,102 @@ public class ChristmasSeason extends JavaPlugin {
                     if (rs.next()) {
                         String result = rs.getString(1);
                         if (!"ok".equalsIgnoreCase(result)) {
-                            getLogger().severe("═══════════════════════════════════════════");
-                            getLogger().severe(" DATENBANK-KORRUPTION ERKANNT!");
-                            getLogger().severe(" Integrity Check: " + result);
-                            getLogger().severe(" Empfehlung: /xmas backup restore SAFE confirm");
-                            getLogger().severe("═══════════════════════════════════════════");
+                            languageManager.logSevere("log.startup.separator");
+                            languageManager.logSevere("log.startup.db-corrupt-1");
+                            languageManager.logSevere("log.startup.db-corrupt-2", result);
+                            languageManager.logSevere("log.startup.db-corrupt-3");
+                            languageManager.logSevere("log.startup.separator");
                         } else {
-                            debug("DB-Integritätscheck: OK");
+                            debug("Database integrity check: OK");
                         }
                     }
                 }
             } catch (Exception e) {
-                getLogger().severe("DB-Integritätscheck fehlgeschlagen: " + e.getMessage());
-                getLogger().severe("Die Datenbank könnte beschädigt sein. Prüfe: /xmas backup list");
+                languageManager.logSevere("log.startup.db-check-failed", e.getMessage());
             }
         }
 
-        // Check 3: Emergency-Backups erkennen (Hinweis auf vorherigen Crash)
         if (backupManager != null) {
-            java.util.Map<String, java.io.File> allBackups = backupManager.listAllBackups();
-            long emergencyCount = allBackups.keySet().stream().filter(k -> k.startsWith("EMERGENCY")).count();
+            int emergencyCount = backupManager.listEmergencyBackups().size();
             if (emergencyCount > 0) {
-                getLogger().warning("═══════════════════════════════════════════");
-                getLogger().warning(" " + emergencyCount + " Emergency-Backup(s) gefunden!");
-                getLogger().warning(" Der Server wurde zuvor gestoppt während ChristmasSeason aktiv war.");
-                getLogger().warning(" Prüfe: /xmas backup list → /xmas backup restore <ID> confirm");
-                getLogger().warning("═══════════════════════════════════════════");
+                languageManager.logWarning("log.startup.separator");
+                languageManager.logWarning("log.startup.emergency-found-1", emergencyCount);
+                languageManager.logWarning("log.startup.emergency-found-2");
+                languageManager.logWarning("log.startup.separator");
             }
         }
     }
 
-    private void validateMaterialList(String path) {
-        for (String entry : getConfig().getStringList(path)) {
-            String matName = entry.split(":")[0];
-            if (org.bukkit.Material.matchMaterial(matName) == null) {
-                getLogger().warning("config.yml: Unbekanntes Material '" + matName + "' in " + path + " - Eintrag wird ignoriert.");
-            }
-        }
-    }
-
-    // Helper
     private void saveResourceIfAbsent(String fileName) {
-        java.io.File file = new java.io.File(getDataFolder(), fileName);
-        if (!file.exists()) {
-            try {
-                // Prüfe ob Ressource im JAR existiert
-                java.io.InputStream resource = getResource(fileName);
-                if (resource == null) {
-                    getLogger().severe("Resource not found in JAR: " + fileName);
-                    return;
-                }
-                resource.close();
-
-                saveResource(fileName, false);
-                getLogger().info("Extracted resource: " + fileName + " (Size: " + file.length() + " bytes)");
-            } catch (Exception e) {
-                getLogger().severe("Could not extract " + fileName + ": " + e.getMessage());
-                e.printStackTrace();
+        File file = new File(getDataFolder(), fileName);
+        if (file.exists()) return;
+        try {
+            if (getResource(fileName) == null) {
+                getLogger().severe("Resource not found in JAR: " + fileName);
+                return;
             }
-        } else {
-            getLogger().info("Resource already exists: " + fileName + " (Size: " + file.length() + " bytes)");
+            saveResource(fileName, false);
+            getLogger().info("Extracted " + fileName);
+        } catch (Exception e) {
+            getLogger().severe("Could not extract " + fileName + ": " + e.getMessage());
         }
     }
 
-    // Getters
+    // -------------------------------------------------------------- getters
+
     public FoliaSchedulerHelper getFoliaScheduler() { return foliaScheduler; }
     public LanguageManager getLanguageManager() { return languageManager; }
     public BiomeSnapshotBackup getBackupManager() { return backupManager; }
-    public de.boondocksulfur.christmas.util.UpdateChecker getUpdateChecker() { return updateChecker; }
+    public UpdateChecker getUpdateChecker() { return updateChecker; }
     public BiomeCompare getBiomeCompare() { return biomeCompare; }
-    public de.boondocksulfur.christmas.integration.RegionIntegration getRegionIntegration() { return regionIntegration; }
+    public RegionIntegration getRegionIntegration() { return regionIntegration; }
     public GiftManager getGiftManager() { return giftManager; }
     public BiomeSnowManager getBiomeSnowManager() { return biomeSnowManager; }
     public WichtelManager getWichtelManager() { return wichtelManager; }
     public SnowmanManager getSnowmanManager() { return snowmanManager; }
     public SnowstormManager getSnowstormManager() { return snowstormManager; }
     public DecorationManager getDecorationManager() { return decorationManager; }
+    public EventController getEventController() { return eventController; }
+    public LootManager getLootManager() { return lootManager; }
+    public StatsManager getStatsManager() { return statsManager; }
+    public AdventManager getAdventManager() { return adventManager; }
 
-    // Debug-Modus
+    // ---------------------------------------------------------------- debug
+
     public boolean isDebugMode() { return debugMode; }
     public void setDebugMode(boolean enabled) { this.debugMode = enabled; }
 
     public boolean isVerboseDebugMode() { return verboseDebugMode; }
     public void setVerboseDebugMode(boolean enabled) {
         this.verboseDebugMode = enabled;
-        if (enabled) this.debugMode = true; // Verbose aktiviert automatisch Debug
+        if (enabled) this.debugMode = true; // verbose implies debug
     }
 
-    /** Debug-Log: Nur ausgeben wenn Debug-Modus aktiv */
+    /** Debug log, only printed while debug mode is on. */
     public void debug(String message) {
         if (debugMode) {
             getLogger().info("[DEBUG] " + LanguageManager.stripColors(message));
         }
     }
 
-    /** Debug-Log mit Sprach-Unterstützung */
+    /** Debug log from a language key. */
     public void debugLang(String key, Object... replacements) {
         if (debugMode) {
-            String message = languageManager.getMessage(key, replacements);
-            getLogger().info("[DEBUG] " + LanguageManager.stripColors(message));
+            getLogger().info("[DEBUG] " + LanguageManager.stripColors(languageManager.getMessage(key, replacements)));
         }
     }
 
-    /** Verbose Debug-Log: Nur ausgeben wenn Verbose-Debug-Modus aktiv */
+    /** Verbose debug log, only printed while verbose mode is on. */
     public void verboseDebug(String message) {
         if (verboseDebugMode) {
             getLogger().info("[VERBOSE] " + LanguageManager.stripColors(message));
         }
     }
 
-    /** Verbose Debug-Log mit Sprach-Unterstützung */
+    /** Verbose debug log from a language key. */
     public void verboseDebugLang(String key, Object... replacements) {
         if (verboseDebugMode) {
-            String message = languageManager.getMessage(key, replacements);
-            getLogger().info("[VERBOSE] " + LanguageManager.stripColors(message));
+            getLogger().info("[VERBOSE] " + LanguageManager.stripColors(languageManager.getMessage(key, replacements)));
         }
     }
 }

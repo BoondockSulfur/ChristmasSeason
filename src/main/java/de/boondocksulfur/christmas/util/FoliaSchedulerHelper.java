@@ -9,8 +9,12 @@ import org.bukkit.entity.Entity;
 import org.bukkit.plugin.Plugin;
 
 /**
- * Helper class for multi-platform scheduling using FoliaLib.
- * Provides abstraction that works on Spigot, Paper, Purpur, and Folia.
+ * Thin wrapper around FoliaLib that gives every manager the same scheduling
+ * vocabulary on Paper, Purpur and Folia.
+ *
+ * <p>On Paper/Purpur all "global", "location" and "entity" tasks end up on the
+ * main thread (next tick). On Folia they are dispatched to the global region,
+ * the region owning the location, or the entity's owning region respectively.
  */
 public class FoliaSchedulerHelper {
 
@@ -20,13 +24,7 @@ public class FoliaSchedulerHelper {
         this.foliaLib = new FoliaLib(plugin);
     }
 
-    /**
-     * Runs a task on the global region scheduler (for world-wide operations).
-     * On Folia: Uses global region scheduler
-     * On Spigot/Paper: Uses Bukkit scheduler
-     *
-     * @param task The task to run
-     */
+    /** Runs a task on the global region scheduler (world-wide operations such as weather). */
     public void runGlobalTask(Runnable task) {
         foliaLib.getScheduler().runNextTick(wrappedTask -> task.run());
     }
@@ -34,9 +32,8 @@ public class FoliaSchedulerHelper {
     /**
      * Runs a delayed task on the global region scheduler.
      *
-     * @param task       The task to run
-     * @param delayTicks Delay in ticks (20 ticks = 1 second)
-     * @return WrappedTask that can be cancelled
+     * @param delayTicks delay in ticks (20 ticks = 1 second)
+     * @return task handle that can be cancelled
      */
     public WrappedTask runGlobalTaskLater(Runnable task, long delayTicks) {
         return foliaLib.getScheduler().runLater(task, delayTicks);
@@ -45,60 +42,33 @@ public class FoliaSchedulerHelper {
     /**
      * Runs a repeating task on the global region scheduler.
      *
-     * @param task         The task to run
-     * @param delayTicks   Initial delay in ticks
-     * @param periodTicks  Period between executions in ticks
-     * @return WrappedTask that can be cancelled
+     * @param delayTicks  initial delay in ticks
+     * @param periodTicks period between executions in ticks
+     * @return task handle that can be cancelled
      */
     public WrappedTask runGlobalTaskTimer(Runnable task, long delayTicks, long periodTicks) {
         return foliaLib.getScheduler().runTimer(task, delayTicks, periodTicks);
     }
 
     /**
-     * Runs a task on the region scheduler for a specific location.
-     * On Folia: Uses region scheduler
-     * On Spigot/Paper: Uses Bukkit scheduler
-     *
-     * @param location The location whose region should execute the task
-     * @param task     The task to run
+     * Runs a task on the region that owns the given location.
+     * This is the only safe way to touch blocks, chunks or biomes on Folia.
      */
     public void runAtLocation(Location location, Runnable task) {
         foliaLib.getScheduler().runAtLocation(location, wrappedTask -> task.run());
     }
 
-    /**
-     * Runs a delayed task on the region scheduler for a specific location.
-     *
-     * @param location   The location whose region should execute the task
-     * @param task       The task to run
-     * @param delayTicks Delay in ticks
-     * @return WrappedTask that can be cancelled
-     */
+    /** Delayed variant of {@link #runAtLocation(Location, Runnable)}. */
     public WrappedTask runAtLocationLater(Location location, Runnable task, long delayTicks) {
         return foliaLib.getScheduler().runAtLocationLater(location, task, delayTicks);
     }
 
-    /**
-     * Runs a repeating task on the region scheduler for a specific location.
-     *
-     * @param location    The location whose region should execute the task
-     * @param task        The task to run
-     * @param delayTicks  Initial delay in ticks
-     * @param periodTicks Period between executions in ticks
-     * @return WrappedTask that can be cancelled
-     */
+    /** Repeating variant of {@link #runAtLocation(Location, Runnable)}. */
     public WrappedTask runAtLocationTimer(Location location, Runnable task, long delayTicks, long periodTicks) {
         return foliaLib.getScheduler().runAtLocationTimer(location, task, delayTicks, periodTicks);
     }
 
-    /**
-     * Runs a task on the entity's scheduler.
-     * On Folia: Uses entity scheduler
-     * On Spigot/Paper: Uses Bukkit scheduler
-     *
-     * @param entity The entity whose scheduler should execute the task
-     * @param task   The task to run
-     */
+    /** Runs a task on the entity's scheduler (no-op if the entity is already invalid). */
     public void runForEntity(Entity entity, Runnable task) {
         if (entity.isValid()) {
             foliaLib.getScheduler().runAtEntity(entity, wrappedTask -> task.run());
@@ -108,10 +78,7 @@ public class FoliaSchedulerHelper {
     /**
      * Runs a delayed task on the entity's scheduler.
      *
-     * @param entity     The entity whose scheduler should execute the task
-     * @param task       The task to run
-     * @param delayTicks Delay in ticks
-     * @return WrappedTask that can be cancelled, or null if entity is invalid
+     * @return task handle, or {@code null} if the entity is invalid
      */
     public WrappedTask runForEntityLater(Entity entity, Runnable task, long delayTicks) {
         if (entity.isValid()) {
@@ -121,18 +88,19 @@ public class FoliaSchedulerHelper {
     }
 
     /**
-     * Wie runForEntityLater, aber mit retired-Callback: Auf Folia werden
-     * Entity-Scheduler-Tasks beim Entfernen der Entity verworfen (retired)
-     * und laufen NIE - Aufräumlogik (Tracking-Sets etc.) muss deshalb im
-     * retired-Callback passieren, sonst leaken die Einträge!
+     * Like {@link #runForEntityLater(Entity, Runnable, long)} but with a retired callback.
      *
-     * @param retired Läuft, wenn die Entity vor Task-Ausführung entfernt wurde
+     * <p>On Folia, entity-scheduler tasks are <em>retired</em> (dropped) when the
+     * entity is removed before the task runs. Any bookkeeping (tracking sets, caps)
+     * therefore has to happen in the retired callback, otherwise the entries leak.
+     *
+     * @param retired runs when the entity was removed before the task executed
      */
     public WrappedTask runForEntityLater(Entity entity, Runnable task, Runnable retired, long delayTicks) {
         if (entity.isValid()) {
             return foliaLib.getScheduler().runAtEntityLater(entity, task, retired, delayTicks);
         }
-        // Entity ist schon weg - Aufräumlogik direkt ausführen
+        // Entity is already gone: run the bookkeeping right away
         if (retired != null) retired.run();
         return null;
     }
@@ -140,11 +108,7 @@ public class FoliaSchedulerHelper {
     /**
      * Runs a repeating task on the entity's scheduler.
      *
-     * @param entity      The entity whose scheduler should execute the task
-     * @param task        The task to run
-     * @param delayTicks  Initial delay in ticks
-     * @param periodTicks Period between executions in ticks
-     * @return WrappedTask that can be cancelled, or null if entity is invalid
+     * @return task handle, or {@code null} if the entity is invalid
      */
     public WrappedTask runForEntityTimer(Entity entity, Runnable task, long delayTicks, long periodTicks) {
         if (entity.isValid()) {
@@ -154,8 +118,8 @@ public class FoliaSchedulerHelper {
     }
 
     /**
-     * Wie runForEntityTimer, aber mit retired-Callback (siehe
-     * runForEntityLater mit retired) - für Aufräumlogik beim Entity-Tod.
+     * Like {@link #runForEntityTimer(Entity, Runnable, long, long)} but with a retired
+     * callback (see {@link #runForEntityLater(Entity, Runnable, Runnable, long)}).
      */
     public WrappedTask runForEntityTimer(Entity entity, Runnable task, Runnable retired, long delayTicks, long periodTicks) {
         if (entity.isValid()) {
@@ -165,65 +129,42 @@ public class FoliaSchedulerHelper {
         return null;
     }
 
-    /**
-     * Runs an asynchronous task.
-     * Works on all platforms.
-     *
-     * @param task The task to run
-     */
+    /** Runs a task asynchronously (never touch world state from here). */
     public void runAsync(Runnable task) {
         foliaLib.getScheduler().runAsync(wrappedTask -> task.run());
     }
 
-    /**
-     * Runs a delayed asynchronous task.
-     *
-     * @param task      The task to run
-     * @param delayTicks Delay in ticks
-     * @return WrappedTask that can be cancelled
-     */
+    /** Delayed asynchronous task. */
     public WrappedTask runAsyncLater(Runnable task, long delayTicks) {
         return foliaLib.getScheduler().runLaterAsync(task, delayTicks);
     }
 
-    /**
-     * Runs a repeating asynchronous task.
-     *
-     * @param task        The task to run
-     * @param delayTicks  Initial delay in ticks
-     * @param periodTicks Period between executions in ticks
-     * @return WrappedTask that can be cancelled
-     */
+    /** Repeating asynchronous task. */
     public WrappedTask runAsyncTimer(Runnable task, long delayTicks, long periodTicks) {
         return foliaLib.getScheduler().runTimerAsync(task, delayTicks, periodTicks);
     }
 
     /**
-     * Executes a task for each loaded chunk in a world.
-     * This distributes the work across regions automatically on Folia.
-     *
-     * @param world The world to iterate chunks in
-     * @param task  The task to run for each chunk
+     * Executes a task for every loaded chunk of a world, each on the region that
+     * owns the chunk. On Paper this simply runs on the main thread.
      */
     public void forEachLoadedChunk(World world, ChunkTask task) {
         for (Chunk chunk : world.getLoadedChunks()) {
-            Location chunkLoc = chunk.getBlock(8, 64, 8).getLocation();
-            runAtLocation(chunkLoc, () -> task.accept(chunk));
+            runAtLocation(chunkCenter(chunk.getWorld(), chunk.getX(), chunk.getZ()), () -> task.accept(chunk));
         }
     }
 
-    /**
-     * Checks if the server is running on Folia.
-     *
-     * @return true if Folia, false if Spigot/Paper/Purpur
-     */
+    /** Location in the middle of a chunk, used to pick the owning region. */
+    public static Location chunkCenter(World world, int chunkX, int chunkZ) {
+        return new Location(world, (chunkX << 4) + 8, 64, (chunkZ << 4) + 8);
+    }
+
+    /** @return {@code true} when running on Folia (regionised threading). */
     public boolean isFolia() {
         return foliaLib.isFolia();
     }
 
-    /**
-     * Functional interface for chunk tasks.
-     */
+    /** Functional interface for per-chunk tasks. */
     @FunctionalInterface
     public interface ChunkTask {
         void accept(Chunk chunk);

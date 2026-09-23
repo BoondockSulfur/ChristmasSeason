@@ -9,25 +9,22 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.projectiles.ProjectileSource;
 import de.boondocksulfur.christmas.manager.SnowmanManager;
 
+/** Snowballs (and melee hits) from event snow golems never deal damage. */
 public class SnowmanDamageListener implements Listener {
 
     @EventHandler
     public void onDamage(EntityDamageByEntityEvent e) {
         Entity damager = e.getDamager();
 
-        // Direkter Schlag vom Schneemann
         if (damager instanceof Snowman sm && sm.getScoreboardTags().contains(SnowmanManager.TAG)) {
             e.setCancelled(true);
-            e.setDamage(0);
             return;
         }
 
-        // Projektil vom Schneemann
         if (damager instanceof Projectile proj) {
             ProjectileSource src = proj.getShooter();
             if (src instanceof Snowman sm && sm.getScoreboardTags().contains(SnowmanManager.TAG)) {
                 e.setCancelled(true);
-                e.setDamage(0);
             }
         }
     }

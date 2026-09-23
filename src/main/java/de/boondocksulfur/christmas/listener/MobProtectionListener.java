@@ -8,6 +8,7 @@ import de.boondocksulfur.christmas.manager.WichtelManager;
 
 import java.util.Set;
 
+/** Event mobs (baby zombies in particular) must not burn in daylight. */
 public class MobProtectionListener implements Listener {
 
     @EventHandler
@@ -16,7 +17,6 @@ public class MobProtectionListener implements Listener {
         if (tags.contains(WichtelManager.TAG_WICHTEL)
                 || tags.contains(WichtelManager.TAG_ELF)
                 || tags.contains(SnowmanManager.TAG)) {
-            // unsere weihnachtlichen Mobs sollen nicht in der Sonne verbrennen
             e.setCancelled(true);
         }
     }

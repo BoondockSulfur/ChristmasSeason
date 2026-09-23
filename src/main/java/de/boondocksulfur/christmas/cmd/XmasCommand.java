@@ -2,14 +2,25 @@ package de.boondocksulfur.christmas.cmd;
 
 import org.bukkit.Bukkit;
 import org.bukkit.World;
+import org.bukkit.block.Biome;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import de.boondocksulfur.christmas.ChristmasSeason;
+import de.boondocksulfur.christmas.manager.BiomeCompare;
+import de.boondocksulfur.christmas.manager.BiomeSnapshotBackup;
+import de.boondocksulfur.christmas.manager.BiomeSnapshotDatabase;
 import de.boondocksulfur.christmas.manager.BiomeSnowManager;
 import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
+import de.boondocksulfur.christmas.util.Registries;
+import de.boondocksulfur.christmas.util.UpdateChecker;
 
+import java.io.File;
+import java.util.Map;
+
+/** {@code /xmas} - administration of the event. All texts come from the language files. */
 public class XmasCommand implements CommandExecutor {
 
     private final ChristmasSeason plugin;
@@ -25,509 +36,516 @@ public class XmasCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!sender.hasPermission("xmas.admin")) {
-            sender.sendMessage(lang.get("no-permission"));
+            lang.send(sender, "no-permission");
             return true;
         }
-
         if (args.length == 0) {
-            sender.sendMessage(lang.get("command.usage"));
+            lang.send(sender, "command.usage");
             return true;
         }
 
         switch (args[0].toLowerCase()) {
-
-            case "on" -> {
-                // GUARD: Kein /xmas on während der Restore noch läuft
-                if (plugin.getBiomeSnowManager().isRestoring()) {
-                    sender.sendMessage("§c§lFehler: Restore läuft noch!");
-                    sender.sendMessage("§cBitte warte bis der Biome-Restore abgeschlossen ist.");
-                    return true;
-                }
-
-                // GUARD: Hinweis wenn bereits aktiv (Schutz vor doppeltem /xmas on)
-                if (plugin.isActive()) {
-                    sender.sendMessage("§e§lHinweis: ChristmasSeason ist bereits aktiv!");
-                    sender.sendMessage("§7Features werden neu gestartet. Bestehende Snapshots bleiben erhalten.");
-                }
-
-                // SAFE-BACKUP: Erstelle Backup BEVOR Chunks geändert werden!
-                if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-                    boolean backupOk = plugin.getBackupManager().createSafeBackup();
-                    if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
-                        sender.sendMessage("§c§lWARNUNG: SAFE-Backup konnte nicht erstellt werden!");
-                        sender.sendMessage("§cBiome-Daten könnten bei Problemen verloren gehen.");
-                        sender.sendMessage("§7Prüfe Speicherplatz und Berechtigungen im Backup-Ordner.");
-                    }
-                } else {
-                    sender.sendMessage("§c§lWARNUNG: Snapshot-System ist deaktiviert! (enableSnapshot: false)");
-                    sender.sendMessage("§cBiome werden geändert OHNE Backup → kein automatisches Restore möglich!");
-                }
-
-                plugin.getConfig().set("active", true);
-                plugin.saveConfig();
-                plugin.startFeatures();
-                sender.sendMessage(lang.get("command.on.success"));
-            }
-
-            case "off" -> {
-                // TIMESTAMP-BACKUP: Erstelle Backup BEVOR Restore startet!
-                if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-                    boolean backupOk = plugin.getBackupManager().createTimestampBackup();
-                    if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
-                        sender.sendMessage("§c§lWARNUNG: Timestamp-Backup fehlgeschlagen!");
-                        sender.sendMessage("§cRestore wird trotzdem durchgeführt.");
-                    }
-                }
-
-                plugin.getConfig().set("active", false);
-                plugin.saveConfig();
-                plugin.getSnowstormManager().setStorm(false);
-
-                // WICHTIG: Cleanup VOR stopFeatures(), damit die Tracker noch gefüllt sind!
-                sender.sendMessage(lang.get("command.off.cleanup"));
-                plugin.getDecorationManager().cleanup();
-                plugin.getGiftManager().cleanup();
-                plugin.getWichtelManager().cleanup();
-                plugin.getSnowmanManager().cleanup();
-
-                // Features stoppen OHNE Biome-Datenbank zu schließen (brauchen wir für Restore!)
-                plugin.debug("Stoppe Features (DB bleibt offen für Restore)...");
-                plugin.stopFeatures(false);  // DB NICHT schließen!
-
-                // Biome asynchron & budgetiert zurücksetzen (schließt DB am Ende selbst)
-                int perTick = Math.max(1, plugin.getConfig().getInt("biome.restore.perTick", 4));
-                plugin.getBiomeSnowManager().restoreALLAsync(perTick);
-
-                // optional Sonne erzwingen (WICHTIG: über Global Scheduler für Folia!)
-                String wn = plugin.getConfig().getString("snowWorld", "world");
-                World w = Bukkit.getWorld(wn);
-                if (w != null) {
-                    scheduler.runGlobalTask(() -> {
-                        w.setStorm(false);
-                        w.setThundering(false);
-                        w.setWeatherDuration(12000);
-                    });
-                }
-
-                sender.sendMessage(lang.get("command.off.success"));
-            }
-
-            case "status" -> {
-                boolean active = plugin.isActive();
-                String wn = plugin.getConfig().getString("snowWorld", "world");
-                World w = Bukkit.getWorld(wn);
-                boolean storm = (w != null && w.hasStorm());
-                String activeStr = active ? lang.get("command.status.active") : lang.get("command.status.inactive");
-                String stormStr = storm ? lang.get("command.status.active") : lang.get("command.status.inactive");
-                sender.sendMessage(lang.getMessage("command.status.message", activeStr, stormStr));
-
-                // Region Integration Status
-                if (plugin.getRegionIntegration() != null) {
-                    sender.sendMessage("§7Region-Schutz: §f" + plugin.getRegionIntegration().getStatus());
-                }
-                // Restore-Fortschritt anzeigen
-                if (plugin.getBiomeSnowManager().isRestoring()) {
-                    sender.sendMessage("§eBiome-Restore läuft gerade...");
-                }
-            }
-
-            case "reload" -> {
-                // CONSISTENCY FIX: ALLE Manager neu starten, nicht nur Biome+Snowstorm -
-                // sonst behalten Gifts/Wichtel/Snowmen/Decoration alte Settings bis zum
-                // nächsten off/on. reloadAll() = reloadConfig + lang.reload + stop + start.
-                try {
-                    plugin.reloadAll();
-                } catch (Throwable t) {
-                    plugin.getLogger().severe("Fehler beim Reload: " + t.getMessage());
-                    t.printStackTrace();
-                }
-                sender.sendMessage(lang.get("command.reload.success"));
-            }
-
-            case "biome" -> {
-                if (args.length < 2) {
-                    sender.sendMessage(lang.get("command.biome.usage"));
-                    return true;
-                }
-                switch (args[1].toLowerCase()) {
-                    case "set" -> {
-                        if (args.length < 3) { sender.sendMessage(lang.get("command.biome.set.usage")); return true; }
-                        org.bukkit.block.Biome target;
-                        try {
-                            // Use Registry instead of deprecated valueOf
-                            target = de.boondocksulfur.christmas.util.Registries.biomes().get(org.bukkit.NamespacedKey.minecraft(args[2].toLowerCase()));
-                            if (target == null) throw new IllegalArgumentException();
-                        }
-                        catch (Exception ex) { sender.sendMessage(lang.get("command.biome.set.unknown-biome")); return true; }
-
-                        int r = 0;
-                        if (args.length >= 4) {
-                            try { r = Math.max(0, Integer.parseInt(args[3])); }
-                            catch (NumberFormatException ex) { sender.sendMessage(lang.get("command.biome.set.invalid-radius")); return true; }
-                        }
-                        int changed = plugin.getBiomeSnowManager().setBiomeAroundPlayer(sender, target, r);
-                        sender.sendMessage(lang.getMessage("command.biome.set.success", changed));
-                    }
-                    case "restore" -> {
-                        // Seed-Restore wurde entfernt (Server-Freeze durch Referenzwelt-Laden).
-                        // Restore läuft ausschließlich über '/xmas off' (SQLite-Snapshot).
-                        sender.sendMessage("§c§lWARNUNG: Dieser Befehl wurde deaktiviert!");
-                        sender.sendMessage("§7Er kann den Server zum Absturz bringen.");
-                        sender.sendMessage("§7Verwende stattdessen '/xmas off' zum Zurücksetzen.");
-                    }
-                    case "clearsnap" -> {
-                        // SCHUTZ: Löschen während Biome modifiziert sind = permanenter Datenverlust!
-                        if (plugin.isActive()) {
-                            sender.sendMessage("§c§lFEHLER: ChristmasSeason ist aktiv!");
-                            sender.sendMessage("§cDas Löschen der Snapshot-Datenbank während Biome modifiziert sind");
-                            sender.sendMessage("§cwürde zu permanentem Datenverlust führen!");
-                            sender.sendMessage("§7Führe zuerst '/xmas off' aus, dann '/xmas biome clearsnap'.");
-                            return true;
-                        }
-                        // Prüfe ob Backup existiert, bevor Snapshot gelöscht wird
-                        if (!plugin.getBackupManager().hasSafeBackup() && plugin.getBackupManager().listTimestampBackups().isEmpty()) {
-                            sender.sendMessage("§c§lWARNUNG: Kein Backup vorhanden!");
-                            sender.sendMessage("§cWenn du den Snapshot löschst, gibt es keine Möglichkeit zur Wiederherstellung.");
-                            sender.sendMessage("§7Erstelle erst ein Backup: '/xmas backup create'");
-                            return true;
-                        }
-                        plugin.getBiomeSnowManager().clearSnapshot();
-                        sender.sendMessage(lang.get("command.biome.clearsnap.success"));
-                    }
-                    // "migrate" command entfernt - nicht mehr benötigt mit neuem 3D-Format
-                    case "status" -> {
-                        BiomeSnowManager m = plugin.getBiomeSnowManager();
-                        sender.sendMessage(lang.getMessage("command.biome.status.message", m.getClass().getSimpleName()));
-                        // Zeige Datenbank-Statistiken
-                        sender.sendMessage("§7═══ Snapshot Datenbank ═══");
-                        try {
-                            de.boondocksulfur.christmas.manager.BiomeSnapshotDatabase db = m.getDatabase();
-                            if (db == null) {
-                                sender.sendMessage("§c✗ Datenbank: NICHT AKTIV");
-                                sender.sendMessage("§7  (enableSnapshot: false in config.yml)");
-                            } else {
-                                int chunks = db.getChunkCount();
-                                long bytes = db.getDatabaseSize();
-                                double mb = bytes / (1024.0 * 1024.0);
-                                sender.sendMessage("§a✓ Datenbank: AKTIV");
-                                sender.sendMessage("§7  Chunks: §f" + chunks);
-                                sender.sendMessage("§7  Größe: §f" + String.format("%.2f MB", mb));
-                            }
-                        } catch (Exception e) {
-                            sender.sendMessage("§c✗ Fehler beim Abrufen: " + e.getMessage());
-                        }
-                    }
-                    case "compare" -> {
-                        if (args.length < 3) {
-                            sender.sendMessage("§b/xmas biome compare §e<backup-ID>");
-                            sender.sendMessage("§7Vergleicht aktuelle Biome mit Backup");
-                            return true;
-                        }
-
-                        java.io.File backupFile = resolveBackupFile(args[2]);
-                        if (backupFile == null) {
-                            sender.sendMessage("§cUngültige Backup-ID. Verwende §f/xmas backup list");
-                            return true;
-                        }
-
-                        sender.sendMessage("§7Vergleiche Biome mit Backup...");
-                        sender.sendMessage("§7Dies kann einige Sekunden dauern!");
-
-                        final java.io.File finalBackupFile = backupFile;
-                        final String backupId = args[2];
-                        scheduler.runAsync(() -> {
-                            de.boondocksulfur.christmas.manager.BiomeCompare.CompareResult result =
-                                plugin.getBiomeCompare().compareWithBackup(finalBackupFile);
-
-                            scheduler.runGlobalTask(() -> {
-                                if (result == null) {
-                                    sender.sendMessage("§c✗ Vergleich fehlgeschlagen! Siehe Console.");
-                                    return;
-                                }
-
-                                sender.sendMessage("§6═══ VERGLEICH ERGEBNIS ═══");
-                                sender.sendMessage("§7Backup: §f" + finalBackupFile.getName());
-                                sender.sendMessage("§7Chunks verglichen: §f" + result.totalChunks);
-                                sender.sendMessage("§7Identisch: §a" + result.identicalChunks + " §7(" + String.format("%.1f%%", result.getMatchPercentage()) + ")");
-                                sender.sendMessage("§7Unterschiede: §c" + result.differences.size());
-
-                                if (!result.differences.isEmpty()) {
-                                    sender.sendMessage("§7Top 5 Chunks mit Unterschieden:");
-                                    int shown = Math.min(5, result.differences.size());
-                                    for (int i = 0; i < shown; i++) {
-                                        de.boondocksulfur.christmas.manager.BiomeCompare.ChunkDifference diff = result.differences.get(i);
-                                        sender.sendMessage("§7  " + (i + 1) + ". §fChunk[" + diff.chunkX + ", " + diff.chunkZ + "] §7- §c" + diff.differenceCount + " §7Änderungen");
-                                    }
-                                    sender.sendMessage("§eKorrektur: §f/xmas biome fix-diff " + backupId);
-                                }
-                                sender.sendMessage("§6═══════════════════════════");
-                            });
-                        });
-                    }
-
-                    case "fix-diff" -> {
-                        if (args.length < 3) {
-                            sender.sendMessage("§b/xmas biome fix-diff §e<backup-ID> [confirm]");
-                            sender.sendMessage("§7Korrigiert Unterschiede mit Backup");
-                            return true;
-                        }
-
-                        java.io.File backupFile = resolveBackupFile(args[2]);
-                        if (backupFile == null) {
-                            sender.sendMessage("§cUngültige Backup-ID. Verwende §f/xmas backup list");
-                            return true;
-                        }
-
-                        boolean confirmFix = args.length >= 4 && args[3].equalsIgnoreCase("confirm");
-                        if (!confirmFix) {
-                            sender.sendMessage("§c§lWARNUNG:");
-                            sender.sendMessage("§7Dies wird alle unterschiedlichen Chunks aus dem Backup wiederherstellen!");
-                            sender.sendMessage("§7Aktuelle Biome werden überschrieben.");
-                            sender.sendMessage("§eBestätigung: §f/xmas biome fix-diff " + args[2] + " confirm");
-                            return true;
-                        }
-
-                        sender.sendMessage("§7Korrigiere Unterschiede...");
-                        sender.sendMessage("§7Dies kann einige Minuten dauern!");
-
-                        final java.io.File finalBackupFile = backupFile;
-                        scheduler.runAsync(() -> {
-                            int fixed = plugin.getBiomeCompare().fixDifferences(finalBackupFile, null);
-                            scheduler.runGlobalTask(() -> {
-                                if (fixed > 0) {
-                                    sender.sendMessage("§a✓ Korrektur abgeschlossen!");
-                                    sender.sendMessage("§7Wiederhergestellt: §f" + fixed + " §7Chunks");
-                                } else {
-                                    sender.sendMessage("§c✗ Korrektur fehlgeschlagen! Siehe Console.");
-                                }
-                            });
-                        });
-                    }
-
-                    default -> sender.sendMessage(lang.get("command.biome.usage"));
-                }
-            }
-
-            case "debug" -> {
-                if (args.length >= 2 && args[1].equalsIgnoreCase("verbose")) {
-                    // Toggle Verbose Debug
-                    boolean newState = !plugin.isVerboseDebugMode();
-                    plugin.setVerboseDebugMode(newState);
-                    if (newState) {
-                        sender.sendMessage("§a✓ Verbose Debug-Modus aktiviert");
-                        sender.sendMessage("§7Sehr ausführliche Logs (inkl. Biome-Snapshot Details) sind jetzt aktiv.");
-                    } else {
-                        sender.sendMessage("§c✗ Verbose Debug-Modus deaktiviert");
-                        sender.sendMessage("§7Normale Debug-Logs bleiben aktiv.");
-                    }
-                } else {
-                    // Toggle Normal Debug
-                    boolean newState = !plugin.isDebugMode();
-                    plugin.setDebugMode(newState);
-                    plugin.setVerboseDebugMode(false); // Verbose ausschalten wenn normaler Debug getoggelt wird
-                    if (newState) {
-                        sender.sendMessage("§a✓ Debug-Modus aktiviert");
-                        sender.sendMessage("§7Ausführliche Logs sind jetzt aktiv.");
-                        sender.sendMessage("§7Tipp: Nutze §f/xmas debug verbose§7 für noch mehr Details.");
-                    } else {
-                        sender.sendMessage("§c✗ Debug-Modus deaktiviert");
-                        sender.sendMessage("§7Normale Logs wiederhergestellt.");
-                    }
-                }
-            }
-
-            case "storm" -> {
-                if (args.length < 2) {
-                    sender.sendMessage(lang.get("command.storm.usage"));
-                    return true;
-                }
-                String wn = plugin.getConfig().getString("snowWorld", "world");
-                World w = Bukkit.getWorld(wn);
-
-                switch (args[1].toLowerCase()) {
-                    case "on" -> {
-                        plugin.getSnowstormManager().setStorm(true);
-                        // WICHTIG: World-Operationen über Global Scheduler für Folia!
-                        if (w != null) {
-                            scheduler.runGlobalTask(() -> {
-                                w.setStorm(true);
-                                w.setThundering(false);
-                            });
-                        }
-                        sender.sendMessage(lang.get("command.storm.on"));
-                    }
-                    case "off" -> {
-                        plugin.getSnowstormManager().setStorm(false);
-                        // WICHTIG: World-Operationen über Global Scheduler für Folia!
-                        if (w != null) {
-                            scheduler.runGlobalTask(() -> {
-                                w.setStorm(false);
-                                w.setThundering(false);
-                            });
-                        }
-                        sender.sendMessage(lang.get("command.storm.off"));
-                    }
-                    case "toggle" -> {
-                        boolean newState;
-                        if (w != null) {
-                            newState = !w.hasStorm();
-                            // WICHTIG: World-Operationen über Global Scheduler für Folia!
-                            boolean finalNewState = newState;
-                            scheduler.runGlobalTask(() -> {
-                                w.setStorm(finalNewState);
-                                w.setThundering(false);
-                            });
-                        } else {
-                            newState = true;
-                        }
-                        plugin.getSnowstormManager().setStorm(newState);
-                        String stateStr = newState ? lang.get("command.status.active") : lang.get("command.status.inactive");
-                        sender.sendMessage(lang.getMessage("command.storm.toggle", stateStr));
-                    }
-                    case "status" -> {
-                        boolean storm = (w != null && w.hasStorm());
-                        String stormStr = storm ? lang.get("command.status.active") : lang.get("command.status.inactive");
-                        sender.sendMessage(lang.getMessage("command.storm.status", stormStr));
-                    }
-                    case "pulse" -> {
-                        int sec = 5;
-                        if (args.length >= 3) {
-                            try { sec = Math.max(1, Integer.parseInt(args[2])); }
-                            catch (NumberFormatException ex) { sender.sendMessage(lang.get("command.storm.pulse.invalid-duration")); return true; }
-                        }
-                        if (w != null) {
-                            plugin.getSnowstormManager().setStorm(true);
-                            // WICHTIG: World-Operationen über Global Scheduler für Folia!
-                            scheduler.runGlobalTask(() -> {
-                                w.setStorm(true);
-                                w.setThundering(false);
-                            });
-                            scheduler.runGlobalTaskLater(() -> {
-                                plugin.getSnowstormManager().setStorm(false);
-                                // Diese sind OK weil bereits im Global Scheduler Kontext
-                                w.setStorm(false);
-                                w.setThundering(false);
-                            }, sec * 20L);
-                            sender.sendMessage(lang.getMessage("command.storm.pulse.success", sec));
-                        } else {
-                            sender.sendMessage(lang.get("command.storm.pulse.world-not-found"));
-                        }
-                    }
-                    default -> sender.sendMessage(lang.get("command.storm.usage"));
-                }
-            }
-
-            case "update" -> {
-                if (args.length < 2 || !args[1].equalsIgnoreCase("check")) {
-                    sender.sendMessage("§b/xmas update §7<check>");
-                    return true;
-                }
-
-                sender.sendMessage("§7Prüfe auf Updates...");
-                de.boondocksulfur.christmas.util.UpdateChecker checker = plugin.getUpdateChecker();
-
-                checker.checkForUpdates().thenAccept(result -> {
-                    scheduler.runGlobalTask(() -> {
-                        if (result.isUpdateAvailable()) {
-                            sender.sendMessage("§a§lUpdate verfügbar!");
-                            sender.sendMessage("§7Aktuelle Version: §c" + result.getCurrentVersion());
-                            sender.sendMessage("§7Neueste Version:  §a" + result.getLatestVersion());
-                            sender.sendMessage("§b  ▸ Modrinth: §f" + checker.getModrinthUrl());
-                            sender.sendMessage("§b  ▸ GitHub:   §f" + checker.getGitHubUrl());
-                        } else if (result.getLatestVersion() != null) {
-                            sender.sendMessage("§a✓ Du verwendest die neueste Version!");
-                            sender.sendMessage("§7Version: §f" + result.getCurrentVersion());
-                        } else {
-                            sender.sendMessage("§c✗ Update-Check fehlgeschlagen!");
-                            sender.sendMessage("§7Keine Verbindung zu Modrinth oder GitHub.");
-                        }
-                    });
-                });
-            }
-
-            case "backup" -> {
-                if (args.length < 2) {
-                    sender.sendMessage("§b/xmas backup §7<list|restore|create|clear>");
-                    return true;
-                }
-
-                de.boondocksulfur.christmas.manager.BiomeSnapshotBackup backup = plugin.getBackupManager();
-
-                switch (args[1].toLowerCase()) {
-                    case "list" -> {
-                        java.util.Map<String, java.io.File> backups = backup.listAllBackups();
-                        sender.sendMessage(lang.get("log.backup.list-header"));
-                        if (backups.isEmpty()) {
-                            sender.sendMessage(lang.get("log.backup.list-empty"));
-                        } else {
-                            int i = 1;
-                            for (java.util.Map.Entry<String, java.io.File> entry : backups.entrySet()) {
-                                sender.sendMessage(lang.getMessage("log.backup.list-entry", i, entry.getKey(), entry.getValue().length() / 1024));
-                                i++;
-                            }
-                        }
-                        sender.sendMessage(lang.get("log.backup.list-footer"));
-                    }
-
-                    case "restore" -> {
-                        if (args.length < 3) {
-                            sender.sendMessage(lang.get("log.backup.restore-usage"));
-                            return true;
-                        }
-
-                        java.io.File backupFile = resolveBackupFile(args[2]);
-                        if (backupFile == null) {
-                            sender.sendMessage(lang.get("log.backup.invalid-id"));
-                            return true;
-                        }
-
-                        boolean confirmRestore = args.length >= 4 && args[3].equalsIgnoreCase("confirm");
-                        if (!confirmRestore) {
-                            sender.sendMessage(lang.get("log.backup.restore-confirm"));
-                            sender.sendMessage(lang.get("log.backup.restore-warning"));
-                            sender.sendMessage(lang.getMessage("log.backup.restore-command", args[2]));
-                            return true;
-                        }
-
-                        sender.sendMessage("§7Restore läuft...");
-                        if (backup.restoreBackup(backupFile)) {
-                            sender.sendMessage("§a✓ Backup wiederhergestellt!");
-                        } else {
-                            sender.sendMessage("§c✗ Fehler beim Restore! Siehe Console.");
-                        }
-                    }
-
-                    case "create" -> {
-                        sender.sendMessage("§7Erstelle manuelles Backup...");
-                        if (backup.createTimestampBackup()) {
-                            sender.sendMessage("§a✓ Backup erstellt!");
-                        } else {
-                            sender.sendMessage("§c✗ Fehler beim Erstellen! Siehe Console.");
-                        }
-                    }
-
-                    case "clear" -> {
-                        sender.sendMessage("§7Lösche alle Timestamp-Backups...");
-                        int deleted = backup.clearAllBackups();
-                        sender.sendMessage(lang.getMessage("log.backup.cleared", deleted));
-                    }
-
-                    default -> sender.sendMessage("§b/xmas backup §7<list|restore|create|clear>");
-                }
-            }
-
-            default -> sender.sendMessage(lang.get("command.usage"));
+            case "on" -> handleOn(sender);
+            case "off" -> handleOff(sender);
+            case "status" -> handleStatus(sender);
+            case "reload" -> handleReload(sender);
+            case "biome" -> handleBiome(sender, args);
+            case "debug" -> handleDebug(sender, args);
+            case "storm" -> handleStorm(sender, args);
+            case "update" -> handleUpdate(sender, args);
+            case "backup" -> handleBackup(sender, args);
+            case "feature" -> handleFeature(sender, args);
+            case "stats" -> handleStats(sender, args);
+            default -> lang.send(sender, "command.usage");
         }
-
         return true;
     }
 
+    // ------------------------------------------------------------ on / off
+
+    private void handleOn(CommandSender sender) {
+        plugin.getEventController().activate(sender, de.boondocksulfur.christmas.api.XmasStateChangeEvent.Cause.COMMAND);
+    }
+
+    private void handleOff(CommandSender sender) {
+        plugin.getEventController().deactivate(sender, de.boondocksulfur.christmas.api.XmasStateChangeEvent.Cause.COMMAND);
+    }
+
+    // ------------------------------------------------------- status / reload
+
+    private void handleStatus(CommandSender sender) {
+        World w = Bukkit.getWorld(plugin.getPrimarySnowWorld());
+        boolean storm = (w != null && w.hasStorm());
+        String activeStr = plugin.isActive() ? lang.get("command.status.active") : lang.get("command.status.inactive");
+        String stormStr = storm ? lang.get("command.status.active") : lang.get("command.status.inactive");
+        lang.send(sender, "command.status.message", activeStr, stormStr);
+        lang.send(sender, "command.status.worlds", String.join(", ", plugin.getSnowWorldNames()));
+
+        if (plugin.getRegionIntegration() != null) {
+            lang.send(sender, "command.status.region", plugin.getRegionIntegration().getStatus());
+        }
+        lang.send(sender, "command.status.objects",
+                plugin.getGiftManager().getTrackedCount(),
+                plugin.getDecorationManager().getTrackedCount(),
+                plugin.getWichtelManager().getTrackedCount(),
+                plugin.getSnowmanManager().getTrackedCount());
+        int chunks = plugin.getBiomeSnowManager().getSnapshotChunkCount();
+        if (chunks >= 0) lang.send(sender, "command.status.snapshot", chunks);
+        if (plugin.getBiomeSnowManager().isRestoring()) {
+            lang.send(sender, "command.status.restoring", plugin.getBiomeSnowManager().getRestoreProgress());
+        }
+        if (plugin.getBiomeSnowManager().isConvertRunning()) {
+            lang.send(sender, "command.status.converting", plugin.getBiomeSnowManager().getConvertProgress());
+        }
+        if (plugin.getConfig().getBoolean("schedule.enabled", false)) {
+            de.boondocksulfur.christmas.manager.EventController ec = plugin.getEventController();
+            lang.send(sender, "command.status.schedule", ec.daysUntilStart(), ec.daysLeft());
+        }
+        lang.send(sender, "command.status.gifts-opened", plugin.getStatsManager().getTotalGiftsOpened());
+    }
+
+    private void handleReload(CommandSender sender) {
+        try {
+            plugin.reloadAll();
+            lang.send(sender, "command.reload.success");
+        } catch (Throwable t) {
+            lang.logSevere("log.reload-error", t.getMessage());
+            t.printStackTrace();
+            lang.send(sender, "command.reload.error");
+        }
+    }
+
+    // ------------------------------------------------------------- biome
+
+    private void handleBiome(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            lang.send(sender, "command.biome.usage");
+            return;
+        }
+        switch (args[1].toLowerCase()) {
+            case "set" -> handleBiomeSet(sender, args);
+            case "restore" -> {
+                // Seed based restore was removed (it froze the server); '/xmas off' restores from the snapshot
+                lang.send(sender, "command.biome.restore.disabled");
+            }
+            case "clearsnap" -> {
+                if (plugin.isActive()) {
+                    lang.send(sender, "command.biome.clearsnap.blocked-active");
+                    return;
+                }
+                if (!plugin.getBackupManager().hasSafeBackup() && plugin.getBackupManager().listTimestampBackups().isEmpty()) {
+                    lang.send(sender, "command.biome.clearsnap.no-backup");
+                    return;
+                }
+                plugin.getBiomeSnowManager().clearSnapshot();
+                lang.send(sender, "command.biome.clearsnap.success");
+            }
+            case "status" -> handleBiomeStatus(sender);
+            case "compare" -> handleCompare(sender, args);
+            case "fix-diff" -> handleFixDiff(sender, args);
+            case "convert-all" -> handleConvertAll(sender, args);
+            case "info" -> handleBiomeInfo(sender);
+            default -> lang.send(sender, "command.biome.usage");
+        }
+    }
+
+    private void handleBiomeSet(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            lang.send(sender, "command.players-only");
+            return;
+        }
+        if (args.length < 3) {
+            lang.send(sender, "command.biome.set.usage");
+            return;
+        }
+        Biome target = Registries.biomeByName(args[2]);
+        if (target == null) {
+            lang.send(sender, "command.biome.set.unknown-biome");
+            return;
+        }
+
+        int r = 0;
+        if (args.length >= 4) {
+            try { r = Math.max(0, Integer.parseInt(args[3])); }
+            catch (NumberFormatException ex) { lang.send(sender, "command.biome.set.invalid-radius"); return; }
+        }
+
+        int scheduled = plugin.getBiomeSnowManager().setBiomeAroundPlayer(player, target, r);
+        if (scheduled < 0) {
+            lang.send(sender, "command.biome.set.only-active");
+            return;
+        }
+        lang.send(sender, "command.biome.set.success", scheduled);
+    }
+
+    private void handleBiomeStatus(CommandSender sender) {
+        BiomeSnowManager m = plugin.getBiomeSnowManager();
+        lang.send(sender, "command.biome.status.header");
+        try {
+            BiomeSnapshotDatabase db = m.getDatabase();
+            if (db == null) {
+                lang.send(sender, "command.biome.status.db-inactive");
+            } else {
+                lang.send(sender, "command.biome.status.db-active");
+                lang.send(sender, "command.biome.status.db-chunks", db.getChunkCount());
+                lang.send(sender, "command.biome.status.db-size", String.format(java.util.Locale.ROOT, "%.2f", db.getDatabaseSize() / (1024.0 * 1024.0)));
+            }
+        } catch (Exception e) {
+            lang.send(sender, "command.biome.status.db-error", e.getMessage());
+        }
+    }
+
+    private void handleCompare(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            lang.send(sender, "command.biome.compare.usage");
+            return;
+        }
+        File backupFile = resolveBackupFile(args[2]);
+        if (backupFile == null) {
+            lang.send(sender, "log.backup.invalid-id");
+            return;
+        }
+
+        lang.send(sender, "command.biome.compare.running");
+        final String backupId = args[2];
+
+        // Database access on an async thread; chunk work is scheduled per region inside BiomeCompare
+        scheduler.runAsync(() -> {
+            BiomeCompare.CompareResult result = plugin.getBiomeCompare().compareWithBackup(backupFile);
+            scheduler.runGlobalTask(() -> {
+                if (result == null) {
+                    lang.send(sender, "command.biome.compare.failed");
+                    return;
+                }
+                lang.send(sender, "command.biome.compare.header");
+                lang.send(sender, "command.biome.compare.backup", backupFile.getName());
+                lang.send(sender, "command.biome.compare.compared", result.totalChunks);
+                lang.send(sender, "command.biome.compare.identical", result.identicalChunks, String.format(java.util.Locale.ROOT, "%.1f", result.getMatchPercentage()));
+                lang.send(sender, "command.biome.compare.differences", result.differences.size());
+
+                if (!result.differences.isEmpty()) {
+                    lang.send(sender, "command.biome.compare.top-header");
+                    int shown = Math.min(5, result.differences.size());
+                    for (int i = 0; i < shown; i++) {
+                        BiomeCompare.ChunkDifference diff = result.differences.get(i);
+                        lang.send(sender, "command.biome.compare.top-entry", i + 1, diff.chunkX, diff.chunkZ, diff.differenceCount);
+                    }
+                    lang.send(sender, "command.biome.compare.fix-hint", backupId);
+                }
+                lang.send(sender, "command.biome.compare.footer");
+            });
+        });
+    }
+
+    private void handleFixDiff(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            lang.send(sender, "command.biome.fix-diff.usage");
+            return;
+        }
+        File backupFile = resolveBackupFile(args[2]);
+        if (backupFile == null) {
+            lang.send(sender, "log.backup.invalid-id");
+            return;
+        }
+
+        boolean confirmFix = args.length >= 4 && args[3].equalsIgnoreCase("confirm");
+        if (!confirmFix) {
+            lang.send(sender, "command.biome.fix-diff.warning");
+            lang.send(sender, "command.biome.fix-diff.confirm", args[2]);
+            return;
+        }
+
+        lang.send(sender, "command.biome.fix-diff.running");
+        scheduler.runAsync(() -> {
+            int fixed = plugin.getBiomeCompare().fixDifferences(backupFile, null);
+            scheduler.runGlobalTask(() -> {
+                if (fixed >= 0) {
+                    lang.send(sender, "command.biome.fix-diff.done", fixed);
+                } else {
+                    lang.send(sender, "command.biome.fix-diff.failed");
+                }
+            });
+        });
+    }
+
+    /** Explains why a spot is (or is not) snowy: current and original biome, snapshot, exclusion. */
+    private void handleBiomeInfo(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            lang.send(sender, "command.players-only");
+            return;
+        }
+        BiomeSnowManager.ColumnInfo info = plugin.getBiomeSnowManager().inspect(player.getLocation());
+        String yes = lang.get("command.biome.info.yes"), no = lang.get("command.biome.info.no");
+        lang.send(sender, "command.biome.info.header", player.getLocation().getBlockX(), player.getLocation().getBlockY(), player.getLocation().getBlockZ());
+        lang.send(sender, "command.biome.info.current", info.current.getKey().toString(),
+                info.currentNaturallySnowy ? yes : no, info.currentNaturallyIcy ? yes : no);
+        if (info.hasSnapshot) {
+            lang.send(sender, "command.biome.info.original", info.original.getKey().toString(),
+                    info.originalNaturallySnowy ? yes : no, info.originalNaturallyIcy ? yes : no);
+        } else {
+            lang.send(sender, "command.biome.info.no-snapshot");
+        }
+        lang.send(sender, "command.biome.info.flags", info.excluded ? yes : no, info.processed ? yes : no, info.manual ? yes : no);
+        lang.send(sender, "command.biome.info.range", info.minY, info.maxY);
+    }
+
+    private void handleConvertAll(CommandSender sender, String[] args) {
+        BiomeSnowManager m = plugin.getBiomeSnowManager();
+        if (args.length >= 3 && args[2].equalsIgnoreCase("cancel")) {
+            m.cancelConvertAll();
+            lang.send(sender, "command.biome.convert-all.cancelled");
+            return;
+        }
+        if (!plugin.isActive()) {
+            lang.send(sender, "command.biome.convert-all.only-active");
+            return;
+        }
+        if (m.isConvertRunning()) {
+            lang.send(sender, "command.biome.convert-all.running", m.getConvertProgress());
+            return;
+        }
+        int radius = plugin.getConfig().getInt("biome.convertAll.radiusChunks", 64);
+        World world = sender instanceof Player p && plugin.isSnowWorld(p.getWorld()) ? p.getWorld() : Bukkit.getWorld(plugin.getPrimarySnowWorld());
+        if (args.length >= 3) {
+            try { radius = Math.max(1, Integer.parseInt(args[2])); }
+            catch (NumberFormatException e) { lang.send(sender, "command.biome.convert-all.usage"); return; }
+        }
+        if (args.length >= 4) {
+            world = Bukkit.getWorld(args[3]);
+        }
+        if (world == null || !plugin.isSnowWorld(world)) {
+            lang.send(sender, "command.biome.convert-all.not-snow-world");
+            return;
+        }
+        int total = (2 * radius + 1) * (2 * radius + 1);
+        boolean confirmed = args.length >= 5 && args[4].equalsIgnoreCase("confirm");
+        if (!confirmed) {
+            lang.send(sender, "command.biome.convert-all.warning", total, world.getName());
+            lang.send(sender, "command.biome.convert-all.confirm", radius, world.getName());
+            return;
+        }
+        final CommandSender feedback = sender;
+        if (m.startConvertAll(world, radius, msg -> scheduler.runGlobalTask(() -> {
+            feedback.sendMessage(msg);
+            if (!(feedback instanceof org.bukkit.command.ConsoleCommandSender)) plugin.getLogger().info(msg);
+        }))) {
+            lang.send(sender, "command.biome.convert-all.started", total, world.getName());
+        } else {
+            lang.send(sender, "command.biome.convert-all.only-active");
+        }
+    }
+
+    // ------------------------------------------------------------- feature / stats
+
+    private void handleFeature(CommandSender sender, String[] args) {
+        de.boondocksulfur.christmas.manager.EventController ec = plugin.getEventController();
+        if (args.length < 2) {
+            StringBuilder sb = new StringBuilder();
+            for (String f : new java.util.TreeSet<>(de.boondocksulfur.christmas.manager.EventController.FEATURES.keySet())) {
+                sb.append(ec.isFeatureEnabled(f) ? "&a" : "&c").append(f).append("&7, ");
+            }
+            lang.send(sender, "command.feature.usage");
+            sender.sendMessage(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacyAmpersand()
+                    .deserialize(sb.length() > 2 ? sb.substring(0, sb.length() - 2) : ""));
+            return;
+        }
+        String feature = args[1].toLowerCase();
+        if (!de.boondocksulfur.christmas.manager.EventController.FEATURES.containsKey(feature)) {
+            lang.send(sender, "command.feature.unknown", feature);
+            return;
+        }
+        if (args.length < 3) {
+            lang.send(sender, ec.isFeatureEnabled(feature) ? "command.feature.status-on" : "command.feature.status-off", feature);
+            return;
+        }
+        boolean on = args[2].equalsIgnoreCase("on") || args[2].equalsIgnoreCase("true");
+        boolean off = args[2].equalsIgnoreCase("off") || args[2].equalsIgnoreCase("false");
+        if (!on && !off) {
+            lang.send(sender, "command.feature.usage");
+            return;
+        }
+        ec.setFeatureEnabled(feature, on);
+        lang.send(sender, on ? "command.feature.enabled" : "command.feature.disabled", feature);
+    }
+
+    private void handleStats(CommandSender sender, String[] args) {
+        de.boondocksulfur.christmas.manager.StatsManager stats = plugin.getStatsManager();
+        lang.send(sender, "command.stats.header", stats.getTotalGiftsOpened());
+        int i = 1;
+        for (java.util.Map.Entry<String, Integer> e : stats.getTop(10)) {
+            lang.send(sender, "command.stats.entry", i++, e.getKey(), e.getValue());
+        }
+        if (args.length >= 2) {
+            org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayerIfCached(args[1]);
+            if (target == null) {
+                lang.send(sender, "command.stats.unknown-player", args[1]);
+            } else {
+                lang.send(sender, "command.stats.player", target.getName(), stats.getGiftsOpened(target.getUniqueId()),
+                        plugin.getAdventManager().getClaimedDays(target.getUniqueId()).size());
+            }
+        } else if (sender instanceof Player p) {
+            lang.send(sender, "command.stats.player", p.getName(), stats.getGiftsOpened(p.getUniqueId()),
+                    plugin.getAdventManager().getClaimedDays(p.getUniqueId()).size());
+        }
+    }
+
+    // ------------------------------------------------------------- debug
+
+    private void handleDebug(CommandSender sender, String[] args) {
+        if (args.length >= 2 && args[1].equalsIgnoreCase("verbose")) {
+            boolean newState = !plugin.isVerboseDebugMode();
+            plugin.setVerboseDebugMode(newState);
+            lang.send(sender, newState ? "command.debug.verbose-on" : "command.debug.verbose-off");
+        } else {
+            boolean newState = !plugin.isDebugMode();
+            plugin.setDebugMode(newState);
+            plugin.setVerboseDebugMode(false);
+            lang.send(sender, newState ? "command.debug.on" : "command.debug.off");
+        }
+    }
+
+    // ------------------------------------------------------------- storm
+
+    private void handleStorm(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            lang.send(sender, "command.storm.usage");
+            return;
+        }
+        World w = Bukkit.getWorld(plugin.getPrimarySnowWorld());
+
+        switch (args[1].toLowerCase()) {
+            case "on" -> {
+                plugin.getSnowstormManager().setStorm(true);
+                lang.send(sender, "command.storm.on");
+            }
+            case "off" -> {
+                plugin.getSnowstormManager().setStorm(false);
+                lang.send(sender, "command.storm.off");
+            }
+            case "toggle" -> {
+                boolean newState = w != null ? !w.hasStorm() : true;
+                plugin.getSnowstormManager().setStorm(newState);
+                String stateStr = newState ? lang.get("command.status.active") : lang.get("command.status.inactive");
+                lang.send(sender, "command.storm.toggle", stateStr);
+            }
+            case "status" -> {
+                boolean storm = (w != null && w.hasStorm());
+                String stormStr = storm ? lang.get("command.status.active") : lang.get("command.status.inactive");
+                lang.send(sender, "command.storm.status", stormStr);
+            }
+            case "pulse" -> {
+                int sec = 5;
+                if (args.length >= 3) {
+                    try { sec = Math.max(1, Integer.parseInt(args[2])); }
+                    catch (NumberFormatException ex) { lang.send(sender, "command.storm.pulse.invalid-duration"); return; }
+                }
+                if (w == null) {
+                    lang.send(sender, "command.storm.pulse.world-not-found");
+                    return;
+                }
+                plugin.getSnowstormManager().pulse(sec);
+                lang.send(sender, "command.storm.pulse.success", sec);
+            }
+            default -> lang.send(sender, "command.storm.usage");
+        }
+    }
+
+    // ------------------------------------------------------------- update
+
+    private void handleUpdate(CommandSender sender, String[] args) {
+        if (args.length < 2 || !args[1].equalsIgnoreCase("check")) {
+            lang.send(sender, "command.update.usage");
+            return;
+        }
+        lang.send(sender, "command.update.checking");
+        UpdateChecker checker = plugin.getUpdateChecker();
+
+        checker.checkForUpdates().thenAccept(result -> scheduler.runGlobalTask(() -> {
+            if (result.isUpdateAvailable()) {
+                if (sender instanceof Player player) {
+                    checker.sendUpdateNotification(player);
+                } else {
+                    lang.send(sender, "command.update.available", result.getCurrentVersion(), result.getLatestVersion());
+                    lang.send(sender, "command.update.links", checker.getModrinthUrl(), checker.getGitHubUrl());
+                }
+            } else if (result.getLatestVersion() != null) {
+                lang.send(sender, "command.update.up-to-date", result.getCurrentVersion());
+            } else {
+                lang.send(sender, "command.update.failed");
+            }
+        }));
+    }
+
+    // ------------------------------------------------------------- backup
+
+    private void handleBackup(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            lang.send(sender, "command.backup.usage");
+            return;
+        }
+        BiomeSnapshotBackup backup = plugin.getBackupManager();
+
+        switch (args[1].toLowerCase()) {
+            case "list" -> {
+                Map<String, File> backups = backup.listAllBackups();
+                lang.send(sender, "log.backup.list-header");
+                if (backups.isEmpty()) {
+                    lang.send(sender, "log.backup.list-empty");
+                } else {
+                    int i = 1;
+                    for (Map.Entry<String, File> entry : backups.entrySet()) {
+                        lang.send(sender, "log.backup.list-entry", i, entry.getKey(), entry.getValue().length() / 1024);
+                        i++;
+                    }
+                }
+                lang.send(sender, "log.backup.list-footer");
+            }
+            case "restore" -> {
+                if (args.length < 3) {
+                    lang.send(sender, "log.backup.restore-usage");
+                    return;
+                }
+                File backupFile = resolveBackupFile(args[2]);
+                if (backupFile == null) {
+                    lang.send(sender, "log.backup.invalid-id");
+                    return;
+                }
+                boolean confirmRestore = args.length >= 4 && args[3].equalsIgnoreCase("confirm");
+                if (!confirmRestore) {
+                    lang.send(sender, "log.backup.restore-confirm");
+                    lang.send(sender, "log.backup.restore-warning");
+                    lang.send(sender, "log.backup.restore-command", args[2]);
+                    return;
+                }
+                lang.send(sender, "command.backup.restoring");
+                if (backup.restoreBackup(backupFile)) {
+                    lang.send(sender, "command.backup.restored");
+                } else {
+                    lang.send(sender, "command.backup.restore-failed");
+                }
+            }
+            case "create" -> {
+                lang.send(sender, "command.backup.creating");
+                if (backup.createTimestampBackup()) {
+                    lang.send(sender, "command.backup.created");
+                } else {
+                    lang.send(sender, "command.backup.create-failed");
+                }
+            }
+            case "clear" -> {
+                int deleted = backup.clearAllBackups();
+                lang.send(sender, "log.backup.cleared", deleted);
+            }
+            default -> lang.send(sender, "command.backup.usage");
+        }
+    }
+
     /**
-     * Löst eine Backup-ID auf: entweder 1-basierter Index aus '/xmas backup list'
-     * oder Name (SAFE, EMERGENCY_..., Timestamp)
+     * Resolves a backup ID: either the 1-based index from {@code /xmas backup list}
+     * or the name (SAFE, EMERGENCY_..., timestamp).
      */
-    private java.io.File resolveBackupFile(String backupId) {
-        java.util.Map<String, java.io.File> backups = plugin.getBackupManager().listAllBackups();
+    private File resolveBackupFile(String backupId) {
+        Map<String, File> backups = plugin.getBackupManager().listAllBackups();
         try {
             int index = Integer.parseInt(backupId) - 1;
             if (index >= 0 && index < backups.size()) {

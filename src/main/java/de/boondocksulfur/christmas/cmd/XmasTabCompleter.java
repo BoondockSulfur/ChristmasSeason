@@ -9,13 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Tab-Completion für /xmas.
- * Der deaktivierte Unterbefehl 'biome restore' wird bewusst nicht vorgeschlagen.
+ * Tab completion for {@code /xmas}.
+ * The disabled sub-command {@code biome restore} is deliberately not suggested.
  */
 public class XmasTabCompleter implements TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("on", "off", "status", "reload", "biome", "storm", "backup", "update", "debug");
-    private static final List<String> BIOME_SUB   = List.of("set", "clearsnap", "status", "compare", "fix-diff");
+    private static final List<String> SUBCOMMANDS = List.of("on", "off", "status", "reload", "biome", "storm", "backup", "update", "debug", "feature", "stats");
+    private static final List<String> BIOME_SUB   = List.of("set", "clearsnap", "status", "compare", "fix-diff", "convert-all", "info");
     private static final List<String> STORM_SUB   = List.of("on", "off", "toggle", "status", "pulse");
     private static final List<String> BACKUP_SUB  = List.of("list", "restore", "create", "clear");
     private static final List<String> UPDATE_SUB  = List.of("check");
@@ -42,6 +42,8 @@ public class XmasTabCompleter implements TabCompleter {
                 case "backup" -> filter(BACKUP_SUB, args[1]);
                 case "update" -> filter(UPDATE_SUB, args[1]);
                 case "debug" -> filter(DEBUG_SUB, args[1]);
+                case "feature" -> filter(new ArrayList<>(new java.util.TreeSet<>(de.boondocksulfur.christmas.manager.EventController.FEATURES.keySet())), args[1]);
+                case "stats" -> filter(org.bukkit.Bukkit.getOnlinePlayers().stream().map(org.bukkit.entity.Player::getName).toList(), args[1]);
                 default -> List.of();
             };
         }
@@ -51,13 +53,16 @@ public class XmasTabCompleter implements TabCompleter {
                 switch (args[1].toLowerCase()) {
                     case "set" -> {
                         List<String> biomes = de.boondocksulfur.christmas.util.Registries.biomes().stream()
-                                .map(b -> b.getKey().getKey())
+                                .map(b -> b.getKey().getNamespace().equals("minecraft") ? b.getKey().getKey() : b.getKey().toString())
                                 .sorted()
                                 .toList();
                         return filter(biomes, args[2]);
                     }
                     case "compare", "fix-diff" -> {
                         return filter(backupIds(), args[2]);
+                    }
+                    case "convert-all" -> {
+                        return filter(List.of("16", "32", "64", "128", "cancel"), args[2]);
                     }
                 }
             }
@@ -66,6 +71,9 @@ public class XmasTabCompleter implements TabCompleter {
             }
             if (args[0].equalsIgnoreCase("storm") && args[1].equalsIgnoreCase("pulse")) {
                 return filter(PULSE_SECS, args[2]);
+            }
+            if (args[0].equalsIgnoreCase("feature")) {
+                return filter(List.of("on", "off"), args[2]);
             }
         }
 
@@ -76,9 +84,16 @@ public class XmasTabCompleter implements TabCompleter {
             if (args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("fix-diff")) {
                 return filter(List.of("confirm"), args[3]);
             }
+            if (args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("convert-all")) {
+                return filter(plugin.getSnowWorldNames(), args[3]);
+            }
             if (args[0].equalsIgnoreCase("backup") && args[1].equalsIgnoreCase("restore")) {
                 return filter(List.of("confirm"), args[3]);
             }
+        }
+
+        if (args.length == 5 && args[0].equalsIgnoreCase("biome") && args[1].equalsIgnoreCase("convert-all")) {
+            return filter(List.of("confirm"), args[4]);
         }
 
         return List.of();

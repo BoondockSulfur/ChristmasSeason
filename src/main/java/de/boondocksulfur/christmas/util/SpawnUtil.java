@@ -5,37 +5,41 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 
+import java.util.concurrent.ThreadLocalRandom;
+
+/**
+ * Finds safe surface positions for gifts, decorations and event mobs.
+ * Must be called on the thread that owns the surrounding chunks.
+ */
 public final class SpawnUtil {
+
+    /** A candidate is rejected when it lies more than this many blocks above the player (roofs, tree tops). */
+    private static final int MAX_HEIGHT_ABOVE_CENTER = 24;
 
     private SpawnUtil() {}
 
     /**
-     * Findet eine sichere Spawn-Location für Entities (Standard)
-     * Versucht mehrere zufällige Positionen und prüft ob sie sicher sind (keine Wände, genug Platz)
+     * Finds a safe spawn location near {@code center}.
      *
-     * @param w World
-     * @param center Zentrum der Suche
-     * @param radius Radius für zufällige Offsets
-     * @param attempts Anzahl Versuche
-     * @return Sichere Location oder Fallback zu findSurface
+     * @param w        world
+     * @param center   search centre (usually the player position)
+     * @param radius   maximum horizontal offset in blocks
+     * @param attempts number of random candidates to test
+     * @return a safe location, or {@code null} if none of the candidates qualified
      */
     public static Location findSafeSpawnLocation(World w, Location center, int radius, int attempts) {
         return findSafeSpawnLocation(w, center, radius, attempts, false);
     }
 
     /**
-     * Findet eine sichere Spawn-Location für Entities
-     * Versucht mehrere zufällige Positionen und prüft ob sie sicher sind
+     * Finds a safe spawn location near {@code center}.
      *
-     * @param w World
-     * @param center Zentrum der Suche
-     * @param radius Radius für zufällige Offsets
-     * @param attempts Anzahl Versuche
-     * @param noWater true = Schneemänner (kein Wasser in 3x3 Radius), false = Normal
-     * @return Sichere Location oder Fallback zu findSurface
+     * @param noWater {@code true} = reject candidates with water/lava within 3 blocks (snow golems)
+     * @return a safe location, or {@code null} if none of the candidates qualified
+     *         (callers must skip the spawn in that case - never fall back to the player position)
      */
     public static Location findSafeSpawnLocation(World w, Location center, int radius, int attempts, boolean noWater) {
-        java.util.Random random = new java.util.Random();
+        ThreadLocalRandom random = ThreadLocalRandom.current();
 
         for (int i = 0; i < attempts; i++) {
             int offsetX = random.nextInt(radius * 2 + 1) - radius;
@@ -43,30 +47,27 @@ public final class SpawnUtil {
             Location testLoc = center.clone().add(offsetX, 0, offsetZ);
 
             Location surface = findSurface(w, testLoc);
+            if (surface == null) continue;
 
-            // Prüfe ob die Location sicher ist (keine Wände drumherum, genug Platz)
-            if (isSafeSpawnLocation(surface, noWater)) {
+            if (isSafeSpawnLocation(surface, center, noWater)) {
                 return surface;
             }
         }
-
-        // Fallback: Verwende alte Logik
-        return findSurface(w, center);
+        return null;
     }
 
     /**
-     * Prüft ob eine Location sicher für Entity-Spawning ist
-     * - Genug Luftraum (2 Blöcke hoch)
-     * - Keine Wände direkt daneben (mind. 1 Seite offen)
-     * - Guter Boden darunter
-     * - Kein Wasser/Lava in Nähe
-     * - Nicht auf Dächern/Bäumen (Licht-Check)
-     * - Nicht zu hoch (Y < 100 = nicht auf Bergen/Baumkronen)
-     *
-     * @param loc Location zum Prüfen
-     * @param noWater true = Strengerer Wasser-Check (3x3 Radius für Schneemänner)
+     * Checks whether a location is safe for spawning:
+     * <ul>
+     *   <li>two blocks of air</li>
+     *   <li>solid, non-hazardous ground</li>
+     *   <li>not walled in (at most two solid sides)</li>
+     *   <li>not far above the player (roofs, tree tops, cliffs)</li>
+     *   <li>open sky (not under a roof or canopy)</li>
+     *   <li>optionally no water/lava nearby</li>
+     * </ul>
      */
-    private static boolean isSafeSpawnLocation(Location loc, boolean noWater) {
+    private static boolean isSafeSpawnLocation(Location loc, Location center, boolean noWater) {
         World w = loc.getWorld();
         if (w == null) return false;
 
@@ -74,30 +75,20 @@ public final class SpawnUtil {
         int y = loc.getBlockY();
         int z = loc.getBlockZ();
 
-        // FIX: Nicht zu hoch spawnen (Y > 100 = wahrscheinlich Dach/Baum/Berg)
-        if (y > 100) {
+        if (y > center.getBlockY() + MAX_HEIGHT_ABOVE_CENTER) {
             return false;
         }
 
-        // Prüfe Luftraum (2 Blöcke hoch)
         Block air1 = w.getBlockAt(x, y, z);
         Block air2 = w.getBlockAt(x, y + 1, z);
-        Material m1 = air1.getType();
-        Material m2 = air2.getType();
-
-        // Muss Luft sein (Wasser/Lava sind nicht Air)
-        if (!m1.isAir() || !m2.isAir()) {
+        if (!air1.getType().isAir() || !air2.getType().isAir()) {
             return false;
         }
 
-        // Prüfe Boden darunter
-        Block ground = w.getBlockAt(x, y - 1, z);
-        Material groundType = ground.getType();
-        if (!isGoodGround(groundType)) {
+        if (!isGoodGround(w.getBlockAt(x, y - 1, z).getType())) {
             return false;
         }
 
-        // Prüfe horizontale Umgebung (mindestens 2 Seiten müssen frei sein)
         int solidSides = 0;
         Block[] sides = {
             w.getBlockAt(x + 1, y, z),
@@ -105,49 +96,27 @@ public final class SpawnUtil {
             w.getBlockAt(x, y, z + 1),
             w.getBlockAt(x, y, z - 1)
         };
-
         for (Block side : sides) {
-            if (side.getType().isSolid()) {
-                solidSides++;
-            }
+            if (side.getType().isSolid()) solidSides++;
         }
-
-        // Wenn 3+ Seiten zu sind = eingemauert
         if (solidSides >= 3) {
             return false;
         }
 
-        // FIX: Schneemänner brauchen strengeren Wasser-Check (3x3 Radius)
-        if (noWater && hasWaterNearby(w, x, y, z, 3)) {
+        if (noWater && hasLiquidNearby(w, x, y, z, 3)) {
             return false;
         }
 
-        // FIX: Erhöhter Licht-Check für "komplett draußen" (nicht unter Bäumen/Dächern)
-        // 15 = volle Helligkeit, 12+ = wahrscheinlich draußen, < 12 = unter Dach/Baum
-        if (air1.getLightFromSky() < 12) {
-            return false;
-        }
-
-        return true;
+        // 15 = full daylight, 12+ = most likely outdoors, below = under a roof or tree
+        return air1.getLightFromSky() >= 12;
     }
 
-    /**
-     * Prüft ob Wasser in einem bestimmten Radius vorhanden ist
-     * Wichtig für Schneemänner die nicht ins Wasser dürfen
-     *
-     * @param w World
-     * @param centerX Zentrum X
-     * @param centerY Zentrum Y
-     * @param centerZ Zentrum Z
-     * @param radius Radius zum Prüfen (z.B. 3 für 3x3)
-     * @return true wenn Wasser gefunden wurde
-     */
-    private static boolean hasWaterNearby(World w, int centerX, int centerY, int centerZ, int radius) {
+    /** @return {@code true} if water or lava exists within the given radius (one block up/down included). */
+    private static boolean hasLiquidNearby(World w, int centerX, int centerY, int centerZ, int radius) {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
-                for (int dy = -1; dy <= 1; dy++) { // Prüfe auch 1 Block über/unter
-                    Block block = w.getBlockAt(centerX + dx, centerY + dy, centerZ + dz);
-                    Material type = block.getType();
+                for (int dy = -1; dy <= 1; dy++) {
+                    Material type = w.getBlockAt(centerX + dx, centerY + dy, centerZ + dz).getType();
                     if (type == Material.WATER || type == Material.LAVA) {
                         return true;
                     }
@@ -157,19 +126,27 @@ public final class SpawnUtil {
         return false;
     }
 
+    /**
+     * Walks down from the highest block until solid ground is found and returns the
+     * first air block above it.
+     *
+     * @return surface location, or {@code null} if no usable surface exists in this column
+     */
     public static Location findSurface(World w, Location around) {
         int x = around.getBlockX();
         int z = around.getBlockZ();
 
-        Block top = w.getHighestBlockAt(x, z); // oberste sinnvolle Oberfläche
-        Block ground = top;
+        Block ground = w.getHighestBlockAt(x, z);
 
-        // runter, bis wir „guten“ Boden haben (kein Wasser/Lava/Laub/Feuer/Pulverschnee)
+        // Walk down until we hit "good" ground (no water, lava, leaves, fire, powder snow)
         while (ground.getY() > w.getMinHeight() && !isGoodGround(ground.getType())) {
             ground = ground.getRelative(0, -1, 0);
         }
+        if (!isGoodGround(ground.getType())) {
+            return null;
+        }
 
-        // zwei Blöcke Luft für Entities/Chest etc.
+        // Need two blocks of air for entities/chests
         Block a = ground.getRelative(0, 1, 0);
         Block a2 = ground.getRelative(0, 2, 0);
         int maxY = w.getMaxHeight() - 2;
@@ -178,11 +155,8 @@ public final class SpawnUtil {
             a = a.getRelative(0, 1, 0);
             a2 = a.getRelative(0, 1, 0);
         }
-
-        // kleine Sicherheitskorrektur: lieber Oberfläche als Höhle
-        if (a.getLightFromSky() == 0) {
-            top = w.getHighestBlockAt(x, z);
-            a = top.getLocation().add(0, 1, 0).getBlock();
+        if (!a.getType().isAir() || !a2.getType().isAir()) {
+            return null;
         }
 
         return new Location(w, x + 0.5, a.getY(), z + 0.5);

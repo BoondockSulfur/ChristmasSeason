@@ -1,6 +1,7 @@
 package de.boondocksulfur.christmas.manager;
 
 import org.bukkit.*;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Snowball;
 import org.bukkit.entity.Snowman;
@@ -10,26 +11,27 @@ import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.SpawnUtil;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 
-import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 
+/**
+ * Spawns snow golems that throw (harmless) snowballs at nearby players.
+ * Golems never despawn on their own, so they are tracked by tag and adopted after
+ * restarts; {@code snowmen.lifetimeSeconds} removes them eventually.
+ */
 public class SnowmanManager {
 
     public static final String TAG = "XMAS_SNOWMAN";
+    public static final String SNOWBALL_TAG = "XMAS_SNOWBALL";
 
     private final ChristmasSeason plugin;
     private final LanguageManager lang;
     private final FoliaSchedulerHelper scheduler;
     private final Random random = new Random();
 
-    // FOLIA FIX: Player-basierte Spawn-Timer (Entity Scheduler)
-    private final java.util.Map<java.util.UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
-
-    // FOLIA FIX: Entity-basierte Attack-Tasks (Entity Scheduler pro Schneemann)
-    private final java.util.Map<java.util.UUID, WrappedTask> entityAttackTasks = new java.util.concurrent.ConcurrentHashMap<>();
-
-    // FOLIA FIX: Track spawned snowmen by UUID for safe cleanup and counting
-    private final java.util.Set<java.util.UUID> trackedSnowmen = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Map<UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<UUID, WrappedTask> entityAttackTasks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<UUID> trackedSnowmen = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public SnowmanManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -40,126 +42,141 @@ public class SnowmanManager {
     public void start() {
         stop();
         if (!plugin.getConfig().getBoolean("snowmen.enabled", true)) return;
-
-        // FOLIA FIX: Spawn-Timer sind jetzt Player-basiert (siehe startPlayerSpawning)
-        // FOLIA FIX: Attack-Tasks sind jetzt Entity-basiert (siehe startEntityAttackTask)
-        plugin.debug("SnowmanManager gestartet (Folia-kompatibel: Player-basierte Spawns + Entity-basierte AI)");
+        plugin.debug("SnowmanManager started (per-player spawns, per-entity AI)");
     }
 
+    /** Stops spawn and attack timers; tracking is kept and re-armed by {@link #adoptLoaded()}. */
     public void stop() {
-        // FOLIA FIX: Stoppe alle Player-basierten Tasks
         for (WrappedTask task : playerSpawnTasks.values()) {
             if (task != null) task.cancel();
         }
         playerSpawnTasks.clear();
 
-        // FOLIA FIX: Stoppe alle Entity-basierten Attack-Tasks
         for (WrappedTask task : entityAttackTasks.values()) {
             if (task != null) task.cancel();
         }
         entityAttackTasks.clear();
-        // Note: trackedSnowmen wird NICHT geleert - bleibt für cleanup() erhalten
     }
 
-    /**
-     * Startet Schneemann-Spawning für einen Spieler (Entity Scheduler)
-     * FOLIA-KOMPATIBEL: Läuft auf Entity Scheduler des Players
-     */
+    /** Starts snowman spawning for a player on the player's entity scheduler. */
     public void startPlayerSpawning(Player player) {
         if (!plugin.getConfig().getBoolean("snowmen.enabled", true)) return;
 
-        java.util.UUID uuid = player.getUniqueId();
+        UUID uuid = player.getUniqueId();
         WrappedTask oldTask = playerSpawnTasks.remove(uuid);
         if (oldTask != null) oldTask.cancel();
 
-        int interval = plugin.getConfig().getInt("snowmen.spawnIntervalSeconds", 30);
+        int interval = Math.max(5, plugin.getConfig().getInt("snowmen.spawnIntervalSeconds", 30));
         WrappedTask task = scheduler.runForEntityTimer(player, () -> {
             if (!player.isOnline() || !player.isValid()) {
                 stopPlayerSpawning(player);
                 return;
             }
             spawnSnowmanNearPlayer(player);
-        }, 40L, interval * 20L);
+        }, () -> playerSpawnTasks.remove(uuid), 40L, interval * 20L);
 
         if (task != null) {
             playerSpawnTasks.put(uuid, task);
-            plugin.debug("Schneemann-Spawning gestartet für " + player.getName());
+            plugin.debug("Snowman spawning started for " + player.getName());
         }
     }
 
-    /**
-     * Stoppt Schneemann-Spawning für einen Spieler
-     */
+    /** Stops snowman spawning for a player. */
     public void stopPlayerSpawning(Player player) {
         WrappedTask task = playerSpawnTasks.remove(player.getUniqueId());
         if (task != null) {
             task.cancel();
-            plugin.debug("Schneemann-Spawning gestoppt für " + player.getName());
+            plugin.debug("Snowman spawning stopped for " + player.getName());
         }
     }
 
-    /**
-     * Entfernt alle Schneemänner aus der Welt
-     * FOLIA-SAFE: Verwendet tracked UUIDs und schedult Entfernung pro Entity
-     */
+    /** @return number of tracked snow golems */
+    public int getTrackedCount() {
+        return trackedSnowmen.size();
+    }
+
+    /** @return {@code true} if the entity is one of our snow golems */
+    public boolean isEventSnowman(Entity entity) {
+        return entity instanceof Snowman && entity.getScoreboardTags().contains(TAG);
+    }
+
+    /** Adopts a tagged snow golem: tracks it and starts its attack task and lifetime. */
+    public void adopt(Entity entity) {
+        if (!isEventSnowman(entity) || !entity.isValid()) return;
+        Snowman sm = (Snowman) entity;
+        boolean newlyTracked = trackedSnowmen.add(sm.getUniqueId());
+        // After a chunk reload the old task holds a stale handle - always re-arm with the live one
+        WrappedTask old = entityAttackTasks.remove(sm.getUniqueId());
+        if (old != null) old.cancel();
+        startEntityAttackTask(sm);
+        if (newlyTracked) {
+            scheduleLifetime(sm);
+            plugin.debug("Adopted snowman " + sm.getUniqueId());
+        }
+    }
+
+    /** Scans all loaded chunks of the snow worlds and adopts tagged snow golems. */
+    public void adoptLoaded() {
+        for (World w : plugin.getSnowWorlds()) {
+            scheduler.forEachLoadedChunk(w, chunk -> {
+                for (Entity e : chunk.getEntities()) {
+                    if (isEventSnowman(e)) adopt(e);
+                }
+            });
+        }
+    }
+
+    /** Removes all snow golems ({@code /xmas off}): tracked ones plus untracked ones in loaded chunks. */
     public void cleanup() {
         int removed = 0;
         int tracked = trackedSnowmen.size();
 
-        // FOLIA FIX: Iteriere über tracked UUIDs statt w.getEntitiesByClass()
-        java.util.Iterator<java.util.UUID> it = trackedSnowmen.iterator();
+        java.util.Iterator<UUID> it = trackedSnowmen.iterator();
         while (it.hasNext()) {
-            java.util.UUID uuid = it.next();
-            org.bukkit.entity.Entity entity = Bukkit.getEntity(uuid);
+            UUID uuid = it.next();
+            WrappedTask attackTask = entityAttackTasks.remove(uuid);
+            if (attackTask != null) attackTask.cancel();
 
+            Entity entity = Bukkit.getEntity(uuid);
             if (entity != null && entity.isValid() && entity instanceof Snowman) {
-                // FOLIA FIX: Cancel attack task if exists
-                WrappedTask attackTask = entityAttackTasks.remove(uuid);
-                if (attackTask != null) attackTask.cancel();
-
-                // FOLIA FIX: Schedule removal auf Entity Scheduler
                 scheduler.runForEntity(entity, () -> {
-                    if (!entity.isDead() && entity.isValid()) {
-                        entity.remove();
-                    }
+                    if (!entity.isDead() && entity.isValid()) entity.remove();
                 });
                 removed++;
             }
-            it.remove(); // Aus Tracking entfernen
+            it.remove();
         }
 
-        plugin.getLogger().info(lang.getMessage("log.cleanup.snowmen", removed));
+        for (World w : plugin.getSnowWorlds()) {
+            scheduler.forEachLoadedChunk(w, chunk -> {
+                for (Entity e : chunk.getEntities()) {
+                    if (isEventSnowman(e)) e.remove();
+                }
+            });
+        }
+
+        lang.logInfo("log.cleanup.snowmen", removed);
         if (tracked > removed && plugin.isDebugMode()) {
             plugin.debug("Snowmen: " + removed + " removed, " + (tracked - removed) + " already gone");
         }
     }
 
-    /**
-     * Spawnt Schneemann in Nähe eines Spielers
-     * FOLIA-KOMPATIBEL: Wird von Entity Scheduler des Players aufgerufen
-     */
+    /** Spawns a snow golem near the player (on the region thread). */
     private void spawnSnowmanNearPlayer(Player player) {
         World w = player.getWorld();
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
-        if (!w.getName().equals(worldName)) return;
+        if (!plugin.isSnowWorld(w)) return;
 
-        // FOLIA FIX: Zähle tracked Schneemänner (global limit) - thread-safe!
         final int max = plugin.getConfig().getInt("snowmen.maxPerWorld", 6);
         if (trackedSnowmen.size() >= max) return;
+        if (plugin.isNearCapReached(player, "snowmen.maxNearPlayer", e -> isEventSnowman(e))) return;
 
-        // FOLIA FIX: Spawne auf Location Scheduler (für getHighestBlockAt)
         Location playerLoc = player.getLocation();
-
         scheduler.runAtLocation(playerLoc, () -> {
-            // OVERSPAWN FIX: Limit erneut prüfen - zwischen Einplanung und Ausführung
-            // können parallele Spawns anderer Spieler das Limit schon erreicht haben!
             if (trackedSnowmen.size() >= max) return;
 
-            // Safe-Spawn: 5 Versuche mit STRENGEM Wasser-Check (noWater=true!)
-            // Schneemänner dürfen NICHT in Wasser spawnen (schmelzen sofort)
+            // Strict water check: snow golems melt in water
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5, true);
-
-            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (loc == null) return;
             if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(loc)) {
                 plugin.debug("Snowman spawn blocked by region protection at " + loc.getBlockX() + "," + loc.getBlockZ());
                 return;
@@ -171,72 +188,71 @@ public class SnowmanManager {
             sm.getScoreboardTags().add(TAG);
             sm.setDerp(false);
 
-            // FOLIA FIX: Track spawned snowman
             trackedSnowmen.add(sm.getUniqueId());
-
-            // FOLIA FIX: Starte Entity Scheduler Task für Attack-Logik
             startEntityAttackTask(sm);
+            scheduleLifetime(sm);
         });
     }
 
-    /**
-     * Startet einen Entity Scheduler Task für Attack-Logik
-     * FOLIA-KOMPATIBEL: Läuft auf Entity Scheduler der Schneemann-Entity
-     */
+    /** Removes the golem after {@code snowmen.lifetimeSeconds} (0 = never). */
+    private void scheduleLifetime(Snowman snowman) {
+        int lifetime = plugin.getConfig().getInt("snowmen.lifetimeSeconds", 600);
+        if (lifetime <= 0) return;
+        UUID id = snowman.getUniqueId();
+        Runnable cleanup = () -> {
+            trackedSnowmen.remove(id);
+            WrappedTask t = entityAttackTasks.remove(id);
+            if (t != null) t.cancel();
+        };
+        scheduler.runForEntityLater(snowman, () -> {
+            // Resolve by UUID: on Paper the handle may be stale after a chunk reload
+            Entity live = Bukkit.getEntity(id);
+            if (live != null && live.isValid()) live.remove();
+            cleanup.run();
+        }, cleanup, lifetime * 20L);
+    }
+
+    /** Per-golem AI on the entity scheduler: throws a snowball at the nearest player in range. */
     private void startEntityAttackTask(Snowman snowman) {
-        java.util.UUID snowmanId = snowman.getUniqueId();
+        UUID snowmanId = snowman.getUniqueId();
         double range = plugin.getConfig().getDouble("snowmen.range", 12.0);
         double chance = plugin.getConfig().getDouble("snowmen.attackChance", 0.35);
-        int attackInterval = plugin.getConfig().getInt("snowmen.attackIntervalSeconds", 5);
+        int attackInterval = Math.max(1, plugin.getConfig().getInt("snowmen.attackIntervalSeconds", 5));
 
-        // FOLIA FIX: Entity Scheduler Task für diesen spezifischen Schneemann
         WrappedTask task = scheduler.runForEntityTimer(snowman, () -> {
-            // Entity-State-Zugriff ist sicher, weil wir auf Entity Scheduler laufen!
             if (!snowman.isValid() || snowman.isDead()) {
                 WrappedTask oldTask = entityAttackTasks.remove(snowmanId);
                 if (oldTask != null) oldTask.cancel();
-                trackedSnowmen.remove(snowmanId); // Remove from tracking when dead
+                trackedSnowmen.remove(snowmanId);
                 return;
             }
 
-            // Attack-Chance prüfen
             if (random.nextDouble() > chance) return;
 
-            // Finde nächsten Spieler in Range
             Player target = null;
             double bestDistSq = Double.MAX_VALUE;
-            World w = snowman.getWorld();
-
-            for (Player p : w.getPlayers()) {
+            for (Player p : snowman.getWorld().getPlayers()) {
+                // Spectators, and players with the bypass permission, are never targeted
+                if (p.getGameMode() == org.bukkit.GameMode.SPECTATOR || p.hasPermission("xmas.bypass.snowmen")) continue;
                 double distSq = p.getLocation().distanceSquared(snowman.getLocation());
                 if (distSq <= range * range && distSq < bestDistSq) {
                     bestDistSq = distSq;
                     target = p;
                 }
             }
-
             if (target == null) return;
 
-            // Richtungsvektor berechnen und auf NaN prüfen (falls Schneemann und Spieler auf gleicher Position)
             org.bukkit.util.Vector direction = target.getLocation().toVector()
                     .subtract(snowman.getLocation().toVector());
-
-            // Wenn die Entfernung zu klein ist, überspringe den Angriff
-            if (direction.lengthSquared() < 0.01) return;
-
+            if (direction.lengthSquared() < 0.01) return; // same position: normalising would give NaN
             direction.normalize().multiply(1.1);
 
-            // Schneeball abfeuern
-            // Marker als Scoreboard-Tag statt deprecated setCustomName -
-            // der Name wurde nirgends gelesen, Tags sind die saubere Kennung
             Snowball ball = snowman.launchProjectile(Snowball.class);
-            ball.addScoreboardTag("XMAS_SNOWBALL");
+            ball.addScoreboardTag(SNOWBALL_TAG);
             ball.setVelocity(direction);
 
         }, () -> {
-            // FOLIA FIX: retired - Schneemann wurde entfernt (getötet/geschmolzen),
-            // bevor der Task lief. Ohne diesen Callback bliebe die UUID im Tracking
-            // und das Spawn-Limit wäre irgendwann dauerhaft voll!
+            // Retired: the golem was removed (killed/melted) - keep the spawn cap accurate
             entityAttackTasks.remove(snowmanId);
             trackedSnowmen.remove(snowmanId);
         }, 60L, attackInterval * 20L);

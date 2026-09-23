@@ -1,18 +1,33 @@
 name: christmas-season
 main: de.boondocksulfur.christmas.ChristmasSeason
-version: 2.3.0
-api-version: '1.21'
+version: 2.4.0
+# 1.21.3 is the real minimum (Biome changed from enum to interface); older servers refuse to load the plugin
+api-version: '1.21.3'
 folia-supported: true
 author: BoondockSulfur
+description: Winter biomes, snowstorms, gifts, decorations and festive mobs for Paper, Purpur and Folia.
+softdepend: [WorldGuard, GriefPrevention, PlaceholderAPI]
 commands:
   xmas:
-    description: Schaltet das Weihnachts-Event ein/aus
+    description: Controls the Christmas event
     usage: /xmas <on|off|status|reload|biome|storm|backup|update|debug>
     permission: xmas.admin
   xmasgift:
-    description: Spawnt ein Geschenk an deiner Position
+    description: Spawns a gift chest at your position
     usage: /xmasgift
     permission: xmas.admin
+  advent:
+    description: Opens today's door of the advent calendar
+    usage: /advent [status|<day>]
+    aliases: [adventskalender, xmasadvent]
+    permission: xmas.advent
 permissions:
   xmas.admin:
+    description: Allows managing the Christmas event
     default: op
+  xmas.advent:
+    description: Allows using the advent calendar
+    default: true
+  xmas.bypass.snowmen:
+    description: Snowmen never target this player
+    default: false

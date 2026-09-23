@@ -1,381 +1,341 @@
 package de.boondocksulfur.christmas.manager;
 
 import de.boondocksulfur.christmas.ChristmasSeason;
+import de.boondocksulfur.christmas.util.LanguageManager;
 import org.bukkit.Bukkit;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
- * Manager für Backup/Restore der Biome-Snapshot-Datenbank
+ * Backup and restore of the biome snapshot database.
  *
- * Features:
- * - Automatisches SAFE-Backup beim /xmas on (vor Snapshot-Erstellung)
- * - Automatisches Timestamp-Backup beim /xmas off (nach erfolgreichem Restore)
- * - Backup-Rotation (max 5 Backups)
- * - Backups werden außerhalb des plugins/-Ordners gespeichert (world-Folder)
- * - Wiederherstellung aus Backup möglich
+ * <p>Backup types (all stored in {@code <world>/christmas_backups/}, outside the plugin folder):
+ * <ul>
+ *   <li>SAFE - written by {@code /xmas on} before any chunk is modified; always overwritten</li>
+ *   <li>timestamp - written by {@code /xmas off} before the restore and by {@code /xmas backup create}; rotated</li>
+ *   <li>EMERGENCY - written on plugin disable while the event is still active; rotated</li>
+ * </ul>
  *
- * Schutz vor:
- * - Versehentlichem Löschen der Datenbank
- * - Datenbank-Korruption
- * - Server-Crash während /xmas on/off
- * - Plugin-Löschung während aktiv
+ * <p>The database runs in WAL mode, so every copy first forces a checkpoint - otherwise
+ * the copy would miss all chunks still sitting in the write-ahead log.
  */
 public class BiomeSnapshotBackup {
 
     private final ChristmasSeason plugin;
+    private final LanguageManager lang;
     private final File backupDir;
     private final File dbFile;
     private final File safeBackupFile;
 
-    private static final int MAX_BACKUPS = 5; // Maximale Anzahl rotierender Backups
+    private static final int MAX_BACKUPS = 5;
+    private static final int MAX_EMERGENCY_BACKUPS = 3;
     private static final String SAFE_BACKUP_NAME = "biome_snapshot_SAFE.db";
+    private static final String TIMESTAMP_PREFIX = "biome_snapshot_backup_";
+    private static final String EMERGENCY_PREFIX = "biome_snapshot_EMERGENCY_";
+    private static final String REPLACED_PREFIX = "biome_snapshot_REPLACED_";
     private static final SimpleDateFormat TIMESTAMP_FORMAT = new SimpleDateFormat("yyyyMMdd_HHmmss");
 
     public BiomeSnapshotBackup(ChristmasSeason plugin) {
         this.plugin = plugin;
+        this.lang = plugin.getLanguageManager();
 
-        // Backup-Verzeichnis: world/christmas_backups/ (außerhalb plugins/!)
         String worldName = plugin.getConfig().getString("snowWorld", "world");
         org.bukkit.World world = Bukkit.getWorld(worldName);
         File worldFolder = world != null ? world.getWorldFolder() : new File(worldName);
         this.backupDir = new File(worldFolder, "christmas_backups");
 
-        // Datenbank-Datei im Plugin-Ordner
         this.dbFile = new File(plugin.getDataFolder(), "biome-snapshot.db");
-
-        // SAFE-Backup Datei
         this.safeBackupFile = new File(backupDir, SAFE_BACKUP_NAME);
 
-        // Erstelle Backup-Verzeichnis falls nötig
-        if (!backupDir.exists()) {
-            backupDir.mkdirs();
-            plugin.getLogger().info(plugin.getLanguageManager().getMessage("log.backup.directory-created", backupDir.getAbsolutePath()));
+        if (!backupDir.exists() && backupDir.mkdirs()) {
+            lang.logInfo("log.backup.directory-created", backupDir.getAbsolutePath());
         }
     }
 
+    // ---------------------------------------------------------------- copying
+
     /**
-     * Erstellt ein SAFE-Backup der aktuellen Datenbank
-     * Wird beim /xmas on aufgerufen (BEVOR Chunks geändert werden)
+     * Copies the database file to {@code target}, flushing the WAL first.
      *
-     * WICHTIG: Überschreibt immer das vorherige SAFE-Backup!
-     * Dieses Backup ist der letzte bekannte GUTE Zustand.
+     * <p>If the manager currently holds the database open, the checkpoint runs through
+     * that connection. Otherwise a short-lived connection is opened so that a WAL file
+     * left behind by a crash is merged into the main file before copying.
+     */
+    private void copyDatabase(File target) throws IOException {
+        flushWriteAheadLog();
+        Files.copy(dbFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    /** Ensures the main database file contains everything (see class Javadoc). */
+    private void flushWriteAheadLog() {
+        BiomeSnowManager manager = plugin.getBiomeSnowManager();
+        BiomeSnapshotDatabase open = manager != null ? manager.getDatabase() : null;
+        if (open != null && open.isOpen()) {
+            open.checkpoint();
+            return;
+        }
+
+        File wal = new File(dbFile.getParentFile(), dbFile.getName() + "-wal");
+        if (!wal.exists()) return;
+
+        // Closed database with a leftover WAL (crash): open + close merges and deletes it
+        BiomeSnapshotDatabase temp = new BiomeSnapshotDatabase(plugin, dbFile);
+        try {
+            temp.open();
+            temp.checkpoint();
+        } catch (Exception e) {
+            lang.logWarning("log.database.checkpoint-failed", e.getMessage());
+        } finally {
+            temp.close();
+        }
+    }
+
+    // ---------------------------------------------------------------- creating
+
+    /**
+     * Writes the SAFE backup (called by {@code /xmas on} before chunks are modified).
+     * Always overwrites the previous SAFE backup - it is the last known good state.
      *
-     * @return true wenn erfolgreich
+     * @return {@code true} on success, {@code false} if there is no database or the copy failed
      */
     public boolean createSafeBackup() {
         if (!dbFile.exists()) {
-            plugin.debug("Kein SAFE-Backup erstellt - Datenbank existiert noch nicht");
+            plugin.debug("No SAFE backup created - database does not exist yet");
             return false;
         }
-
         try {
-            Path source = dbFile.toPath();
-            Path target = safeBackupFile.toPath();
-
-            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-
-            long sizeKB = safeBackupFile.length() / 1024;
-            plugin.getLogger().info(plugin.getLanguageManager().getMessage("log.backup.safe-created",
-                backupDir.getName(), sizeKB));
-            plugin.debug("SAFE-Backup: " + safeBackupFile.getAbsolutePath());
-
+            copyDatabase(safeBackupFile);
+            lang.logInfo("log.backup.safe-created", backupDir.getName(), safeBackupFile.length() / 1024);
+            plugin.debug("SAFE backup: " + safeBackupFile.getAbsolutePath());
             return true;
         } catch (IOException e) {
-            plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.backup.error-creating-safe", e.getMessage()));
+            lang.logWarning("log.backup.error-creating-safe", e.getMessage());
             if (plugin.isDebugMode()) e.printStackTrace();
             return false;
         }
     }
 
     /**
-     * Erstellt ein Timestamp-Backup der aktuellen Datenbank
-     * Wird beim /xmas off aufgerufen (NACH erfolgreichem Restore)
+     * Writes a timestamped backup ({@code biome_snapshot_backup_YYYYMMDD_HHMMSS.db}) and rotates.
      *
-     * Backup-Name: biome_snapshot_backup_YYYYMMDD_HHMMSS.db
-     * Rotiert automatisch (max 5 Backups)
-     *
-     * @return true wenn erfolgreich
+     * @return {@code true} on success
      */
     public boolean createTimestampBackup() {
         if (!dbFile.exists()) {
-            plugin.debug("Kein Timestamp-Backup erstellt - Datenbank existiert nicht");
+            plugin.debug("No timestamp backup created - database does not exist");
             return false;
         }
-
         try {
             String timestamp = TIMESTAMP_FORMAT.format(new Date());
-            File backupFile = new File(backupDir, "biome_snapshot_backup_" + timestamp + ".db");
-
-            Path source = dbFile.toPath();
-            Path target = backupFile.toPath();
-
-            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-
-            long sizeKB = backupFile.length() / 1024;
-            plugin.getLogger().info(plugin.getLanguageManager().getMessage("log.backup.timestamp-created",
-                timestamp, sizeKB));
-            plugin.debug("Timestamp-Backup: " + backupFile.getAbsolutePath());
-
-            // Backup-Rotation durchführen
+            File backupFile = new File(backupDir, TIMESTAMP_PREFIX + timestamp + ".db");
+            copyDatabase(backupFile);
+            lang.logInfo("log.backup.timestamp-created", timestamp, backupFile.length() / 1024);
+            plugin.debug("Timestamp backup: " + backupFile.getAbsolutePath());
             rotateBackups();
-
             return true;
         } catch (IOException e) {
-            plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.backup.error-creating-timestamp", e.getMessage()));
+            lang.logWarning("log.backup.error-creating-timestamp", e.getMessage());
             if (plugin.isDebugMode()) e.printStackTrace();
             return false;
         }
     }
 
     /**
-     * Erstellt ein Notfall-Backup beim onDisable()
-     * Wird aufgerufen wenn Server stoppt WÄHREND /xmas on aktiv ist
+     * Writes an EMERGENCY backup. Called from {@code onDisable()} when the server stops
+     * while the event is active - <em>after</em> the database has been closed, so the
+     * copy is complete. Only the newest {@value #MAX_EMERGENCY_BACKUPS} are kept.
      *
-     * @return true wenn erfolgreich
+     * @return {@code true} on success
      */
     public boolean createEmergencyBackup() {
         if (!dbFile.exists()) {
             return false;
         }
-
         try {
             String timestamp = TIMESTAMP_FORMAT.format(new Date());
-            File emergencyFile = new File(backupDir, "biome_snapshot_EMERGENCY_" + timestamp + ".db");
-
-            Path source = dbFile.toPath();
-            Path target = emergencyFile.toPath();
-
-            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-
-            long sizeKB = emergencyFile.length() / 1024;
-            plugin.getLogger().severe(plugin.getLanguageManager().getMessage("log.backup.emergency-created",
-                emergencyFile.getName(), sizeKB));
-            plugin.getLogger().severe(plugin.getLanguageManager().get("log.backup.emergency-warning"));
-
+            File emergencyFile = new File(backupDir, EMERGENCY_PREFIX + timestamp + ".db");
+            copyDatabase(emergencyFile);
+            lang.logWarning("log.backup.emergency-created", emergencyFile.getName(), emergencyFile.length() / 1024);
+            rotateEmergencyBackups();
             return true;
         } catch (IOException e) {
-            plugin.getLogger().severe(plugin.getLanguageManager().getMessage("log.backup.error-creating-emergency", e.getMessage()));
+            lang.logSevere("log.backup.error-creating-emergency", e.getMessage());
             if (plugin.isDebugMode()) e.printStackTrace();
             return false;
         }
     }
 
+    // ---------------------------------------------------------------- rotation
+
     /**
-     * Rotiert Backups (behält nur die neuesten MAX_BACKUPS)
-     * SCHUTZ: Löscht nur kleine Backups, behält das größte Backup immer!
-     * (Verhindert Verlust des besten Recovery-Points bei wiederholten fehlerhaften Restores)
+     * Keeps only the newest {@value #MAX_BACKUPS} timestamp backups.
+     * The largest backup is never deleted - it is most likely the most complete state.
      */
     private void rotateBackups() {
         List<File> backups = listTimestampBackups();
+        if (backups.size() <= MAX_BACKUPS) return;
 
-        if (backups.size() > MAX_BACKUPS) {
-            int toDelete = backups.size() - MAX_BACKUPS;
-            plugin.debug("Backup-Rotation: " + toDelete + " alte Backups werden gelöscht");
+        int toDelete = backups.size() - MAX_BACKUPS;
+        plugin.debug("Backup rotation: deleting " + toDelete + " old backup(s)");
 
-            // SCHUTZ: Finde das größte Backup (wahrscheinlich der vollständigste Zustand)
-            File largestBackup = null;
-            long largestSize = 0;
-            for (File backup : backups) {
-                if (backup.length() > largestSize) {
-                    largestSize = backup.length();
-                    largestBackup = backup;
-                }
+        File largestBackup = null;
+        long largestSize = 0;
+        for (File backup : backups) {
+            if (backup.length() > largestSize) {
+                largestSize = backup.length();
+                largestBackup = backup;
             }
+        }
 
-            // Lösche älteste Backups, aber NICHT das größte!
-            int deleted = 0;
-            for (int i = 0; i < backups.size() && deleted < toDelete; i++) {
-                File oldBackup = backups.get(i);
-                if (oldBackup.equals(largestBackup)) {
-                    plugin.debug("Überspringe größtes Backup (Schutz): " + oldBackup.getName() + " (" + (oldBackup.length() / 1024) + " KB)");
-                    continue;
-                }
-                if (oldBackup.delete()) {
-                    plugin.debug("Gelöscht: " + oldBackup.getName());
-                    deleted++;
-                } else {
-                    plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.backup.error-deleting", oldBackup.getName()));
-                }
+        int deleted = 0;
+        for (int i = 0; i < backups.size() && deleted < toDelete; i++) {
+            File oldBackup = backups.get(i);
+            if (oldBackup.equals(largestBackup)) {
+                plugin.debug("Keeping largest backup: " + oldBackup.getName());
+                continue;
+            }
+            if (oldBackup.delete()) {
+                plugin.debug("Deleted: " + oldBackup.getName());
+                deleted++;
+            } else {
+                lang.logWarning("log.backup.error-deleting", oldBackup.getName());
             }
         }
     }
 
-    /**
-     * Listet alle verfügbaren Timestamp-Backups auf
-     * Sortiert nach Datum (älteste zuerst)
-     *
-     * @return Liste der Backup-Dateien
-     */
+    /** Keeps only the newest {@value #MAX_EMERGENCY_BACKUPS} emergency backups. */
+    private void rotateEmergencyBackups() {
+        List<File> emergencies = listFiles(EMERGENCY_PREFIX);
+        int toDelete = emergencies.size() - MAX_EMERGENCY_BACKUPS;
+        for (int i = 0; i < toDelete; i++) {
+            File old = emergencies.get(i);
+            if (!old.delete()) {
+                lang.logWarning("log.backup.error-deleting", old.getName());
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- listing
+
+    private List<File> listFiles(String prefix) {
+        if (!backupDir.exists()) return new ArrayList<>();
+        File[] files = backupDir.listFiles((dir, name) -> name.startsWith(prefix) && name.endsWith(".db"));
+        if (files == null || files.length == 0) return new ArrayList<>();
+        List<File> list = new ArrayList<>(Arrays.asList(files));
+        list.sort(Comparator.comparing(File::getName)); // name contains the timestamp: oldest first
+        return list;
+    }
+
+    /** @return timestamp backups, oldest first */
     public List<File> listTimestampBackups() {
-        if (!backupDir.exists()) {
-            return new ArrayList<>();
-        }
+        return listFiles(TIMESTAMP_PREFIX);
+    }
 
-        File[] files = backupDir.listFiles((dir, name) ->
-            name.startsWith("biome_snapshot_backup_") && name.endsWith(".db"));
-
-        if (files == null || files.length == 0) {
-            return new ArrayList<>();
-        }
-
-        // Sortiere nach Datum (Name enthält Timestamp)
-        List<File> backups = Arrays.asList(files);
-        backups.sort(Comparator.comparing(File::getName));
-
-        return backups;
+    /** @return emergency backups, oldest first */
+    public List<File> listEmergencyBackups() {
+        return listFiles(EMERGENCY_PREFIX);
     }
 
     /**
-     * Listet alle verfügbaren Backups auf (inkl. SAFE und EMERGENCY)
-     *
-     * @return Map mit Backup-Typ → Datei
+     * @return all backups keyed by their ID as shown in {@code /xmas backup list}
+     *         (SAFE, the timestamp, or EMERGENCY_&lt;timestamp&gt;)
      */
     public Map<String, File> listAllBackups() {
         Map<String, File> allBackups = new LinkedHashMap<>();
-
-        // SAFE-Backup
         if (safeBackupFile.exists()) {
             allBackups.put("SAFE", safeBackupFile);
         }
-
-        // Timestamp-Backups
-        List<File> timestamps = listTimestampBackups();
-        for (File backup : timestamps) {
-            String name = backup.getName()
-                .replace("biome_snapshot_backup_", "")
-                .replace(".db", "");
-            allBackups.put(name, backup);
+        for (File backup : listTimestampBackups()) {
+            allBackups.put(backup.getName().replace(TIMESTAMP_PREFIX, "").replace(".db", ""), backup);
         }
-
-        // Emergency-Backups
-        File[] emergencyFiles = backupDir.listFiles((dir, name) ->
-            name.startsWith("biome_snapshot_EMERGENCY_") && name.endsWith(".db"));
-        if (emergencyFiles != null) {
-            for (File emergency : emergencyFiles) {
-                String name = "EMERGENCY_" + emergency.getName()
-                    .replace("biome_snapshot_EMERGENCY_", "")
-                    .replace(".db", "");
-                allBackups.put(name, emergency);
-            }
+        for (File emergency : listEmergencyBackups()) {
+            allBackups.put("EMERGENCY_" + emergency.getName().replace(EMERGENCY_PREFIX, "").replace(".db", ""), emergency);
         }
-
         return allBackups;
     }
 
+    // ---------------------------------------------------------------- restoring
+
     /**
-     * Stellt ein Backup wieder her
-     * WICHTIG: Schließt die Datenbank BEVOR das Backup wiederhergestellt wird!
-     * WARNUNG: Sollte nur verwendet werden wenn Plugin INAKTIV ist!
+     * Replaces the active database with a backup. The current database is kept as
+     * {@code biome_snapshot_REPLACED_<timestamp>.db}.
      *
-     * @param backupFile Backup-Datei zum Wiederherstellen
-     * @return true wenn erfolgreich
+     * <p>Should only be used while the event is inactive; while active, the snapshot
+     * manager is stopped and restarted around the copy.
+     *
+     * @return {@code true} on success
      */
     public boolean restoreBackup(File backupFile) {
         if (!backupFile.exists()) {
-            plugin.getLogger().warning(plugin.getLanguageManager().getMessage("log.backup.file-not-found", backupFile.getName()));
+            lang.logWarning("log.backup.file-not-found", backupFile.getName());
             return false;
         }
 
-        // FIX: Warnung wenn Plugin aktiv ist (Race Condition Gefahr!)
         if (plugin.isActive()) {
-            plugin.getLogger().warning("§c§lWARNUNG: Backup-Restore während Plugin AKTIV ist!");
-            plugin.getLogger().warning("§cEs kann zu Race Conditions mit BiomeSnowManager kommen.");
-            plugin.getLogger().warning("§cEmpfehlung: Führe erst '/xmas off' aus, dann restore.");
+            lang.logWarning("log.backup.restore-while-active");
         }
 
         try {
-            // WICHTIG: Datenbank muss geschlossen sein!
             BiomeSnapshotDatabase db = plugin.getBiomeSnowManager().getDatabase();
             if (db != null) {
-                plugin.getLogger().info(plugin.getLanguageManager().get("log.backup.closing-database"));
-                db.close();
+                lang.logInfo("log.backup.closing-database");
+                plugin.getBiomeSnowManager().stop(true);
             }
 
-            // Backup der aktuellen DB (falls vorhanden)
+            // Merge and remove any leftover WAL so it cannot be replayed onto the new file
+            flushWriteAheadLog();
+
             if (dbFile.exists()) {
-                String timestamp = TIMESTAMP_FORMAT.format(new Date());
-                File oldDbBackup = new File(backupDir, "biome_snapshot_REPLACED_" + timestamp + ".db");
+                File oldDbBackup = new File(backupDir, REPLACED_PREFIX + TIMESTAMP_FORMAT.format(new Date()) + ".db");
                 Files.copy(dbFile.toPath(), oldDbBackup.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                plugin.debug("Aktuelle DB gesichert als: " + oldDbBackup.getName());
+                plugin.debug("Current database kept as: " + oldDbBackup.getName());
             }
 
-            // Restore Backup → aktive Datenbank
             Files.copy(backupFile.toPath(), dbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            lang.logInfo("log.backup.restored", backupFile.getName(), dbFile.length() / 1024);
 
-            long sizeKB = dbFile.length() / 1024;
-            plugin.getLogger().info(plugin.getLanguageManager().getMessage("log.backup.restored",
-                backupFile.getName(), sizeKB));
-
-            // Datenbank wieder öffnen
             if (plugin.isActive() && plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-                plugin.getBiomeSnowManager().stop(false); // Ohne DB zu schließen
                 plugin.getBiomeSnowManager().start();
-                plugin.getLogger().info(plugin.getLanguageManager().get("log.backup.database-reopened"));
+                lang.logInfo("log.backup.database-reopened");
             }
-
             return true;
         } catch (IOException e) {
-            plugin.getLogger().severe(plugin.getLanguageManager().getMessage("log.backup.error-restoring", e.getMessage()));
+            lang.logSevere("log.backup.error-restoring", e.getMessage());
             if (plugin.isDebugMode()) e.printStackTrace();
             return false;
         }
     }
 
     /**
-     * Löscht alle Backups (außer SAFE-Backup)
+     * Deletes all timestamp and emergency backups (the SAFE backup is kept).
      *
-     * @return Anzahl gelöschter Backups
+     * @return number of deleted files
      */
     public int clearAllBackups() {
-        List<File> backups = listTimestampBackups();
         int deleted = 0;
-
-        for (File backup : backups) {
-            if (backup.delete()) {
-                deleted++;
-            }
+        for (File backup : listTimestampBackups()) {
+            if (backup.delete()) deleted++;
         }
-
-        // Emergency-Backups auch löschen
-        File[] emergencyFiles = backupDir.listFiles((dir, name) ->
-            name.startsWith("biome_snapshot_EMERGENCY_") && name.endsWith(".db"));
-        if (emergencyFiles != null) {
-            for (File emergency : emergencyFiles) {
-                if (emergency.delete()) {
-                    deleted++;
-                }
-            }
+        for (File emergency : listEmergencyBackups()) {
+            if (emergency.delete()) deleted++;
         }
-
-        plugin.getLogger().info(plugin.getLanguageManager().getMessage("log.backup.cleared", deleted));
+        lang.logInfo("log.backup.cleared", deleted);
         return deleted;
     }
 
-    /**
-     * Prüft ob SAFE-Backup existiert
-     */
     public boolean hasSafeBackup() {
         return safeBackupFile.exists();
     }
 
-    /**
-     * Prüft ob die Datenbank-Datei existiert
-     */
     public boolean hasDatabaseFile() {
         return dbFile.exists();
     }
 
-    /**
-     * Gibt Backup-Verzeichnis zurück
-     */
     public File getBackupDirectory() {
         return backupDir;
     }

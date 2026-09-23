@@ -2,6 +2,91 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.4.0] - 2026-09-23
+
+**Reliability and feature release:** major backup and biome-safety fixes, thread-safe biome tools, restart-safe tracking, a full English language pass, and several long-requested features.
+
+**Upgrade Priority:** HIGH - every server that uses the backup system or custom biomes
+
+### ⚠️ Important for server owners
+- **Backups:** WAL data is now included correctly in all backups. Before this release, timestamp and emergency backups could silently miss the most recent chunks.
+- **Custom biomes:** Terralith and data-pack biomes are now restored correctly instead of coming back as plains.
+- **Biome tools:** `/xmas biome compare` and `fix-diff` are now thread-safe on Paper and Folia.
+
+### Highlights
+- **Schedule** - the event switches itself on and off by date, including windows that span New Year.
+- **Advent calendar** - `/advent` opens one door per player and day, with configurable rewards.
+- **Clean restores** - snow and ice are removed reliably, while pre-existing and player-placed snow/ice are kept.
+- **Restart-safe** - gift chests, decorations and event mobs are recognised again after a restart or reload.
+- **Faster and lighter** - biome snapshots are 16× smaller and the restore no longer causes tick spikes.
+- **More control** - multiple snow worlds, exclusion zones, configurable height range, runtime feature toggles, PlaceholderAPI and API events.
+
+### Compatibility
+- Paper, Purpur and Folia; Minecraft 1.21.3+ and 26.x. `api-version` is now `1.21.3`, so older servers refuse the plugin with a clear message instead of crashing later.
+- Config files stay compatible; all new sections and keys are optional.
+- Snapshot databases from older versions are still read; new snapshots use the new format.
+- Language files were reworked. Delete `messages_en.yml`/`messages_de.yml` from the plugin folder if you never edited them, otherwise the bundled defaults fill in the missing keys.
+
+---
+
+### Full changelog
+
+#### Added
+- **Schedule** (`schedule.*`) - the event activates and deactivates itself by date; windows may span New Year (`12-01` → `01-06`). Only state transitions trigger changes, so a manual `/xmas off` remains respected until the next transition.
+- **Advent calendar** - `/advent` opens one door per player and day (`advent.*`): default items, a weighted random pool, per-day overrides, console commands, optional catch-up of missed days. Claims are stored in `data/advent.yml` and reset each year. `AdventClaimEvent` for other plugins.
+- **Multiple snow worlds** - `snowWorlds` list next to the legacy `snowWorld`. All managers, cleanup, adoption, and snowstorm logic now support every listed world.
+- **Biome exclusion zones** (`biome.exclude.*`) - rectangles, WorldGuard region IDs (`id` or `world:id`) or all GriefPrevention claims are skipped by the biome bubble and by convert-all.
+- **Configurable height range** - `biome.changeMinY` / `biome.changeMaxY` replace the fixed 50-200 range. The snow/ice clean-up on restore is limited to the same range plus an 8-block margin, so natural altitude snow above it is left alone.
+- **Instant snow** (`biome.instantSnow.*`, off by default) - snow layers on the surface and frozen still water the moment a chunk is converted.
+- **`/xmas biome convert-all [radius] [world] confirm`** - budgeted conversion of every generated chunk around spawn, useful for pre-generated maps. `cancel` stops it; progress is shown in `/xmas status`.
+- **`/xmas biome info`** - shows current and original biome, snapshot state and exclusion for the spot you stand on.
+- **Weighted loot entries** - every loot list accepts `{material, amount: "1-3", weight, name, lore, enchantments, glow}` besides `MATERIAL:amount`. Chest item counts and rare chances are configurable (`gifts.contents.*`).
+- **Gift opening** - the first opener is recorded (`data/stats.yml`), `/xmas stats [player]`, optional `gifts.broadcastOnOpen`, sounds and particles on spawn and open (`gifts.effects.*`), `GiftOpenEvent`. `GiftSpawnEvent` is cancellable.
+- **Runtime feature toggles** - `/xmas feature <biome|snowstorm|decoration|gifts|wichtel|elves|snowmen|advent> on|off`, persisted to the config.
+- **Per-player spawn caps** - `wichtel/elves/snowmen.maxNearPlayer` within `spawning.nearRadius` (0 = off, world caps unchanged).
+- **Permissions** - `xmas.advent` (default true), `xmas.bypass.snowmen`. Snowmen also ignore spectators.
+- **PlaceholderAPI** expansion `%xmas_...%` (active, snowstorm, days_until_start, days_left, gifts_opened, gifts_opened_total, advent_claimed, advent_today, tracked_mobs, tracked_gifts).
+- **API events** in `de.boondocksulfur.christmas.api`: `XmasStateChangeEvent`, `GiftSpawnEvent`, `GiftOpenEvent`, `AdventClaimEvent`.
+- **Announcements** on activation and deactivation (`announcements.*`); richer `/xmas status` (worlds, tracked objects, snapshot chunks, restore/conversion progress, schedule, gifts opened).
+- Snowstorm mode `none` now really leaves the weather alone (it was documented but not implemented).
+- `elves.lifetimeSeconds` / `elves.world` (default to the wichtel values).
+- Custom or partial language files fall back to the bundled English texts instead of `[Missing: key]`.
+
+#### Fixed
+- **CRITICAL: Backups were incomplete.** The snapshot database runs in WAL mode; timestamp backups (`/xmas off`), emergency backups (server stop) and SAFE backups taken while the event was running copied only the main file and silently lost every chunk still in the write-ahead log. All copies now force a WAL checkpoint first, and the emergency backup is written after the database has been closed.
+- **CRITICAL: Custom biomes restored as PLAINS.** Snapshots stored biome keys without their namespace, so Terralith and data-pack biomes could not be resolved on restore. New snapshots store the full key; old snapshots are still read as `minecraft:` biomes.
+- **CRITICAL: `/xmas biome compare` and `fix-diff` accessed the world from an async thread** (`IllegalStateException: Asynchronous chunk load!` on Paper, region violations on Folia). The backup database is still read asynchronously, but every chunk comparison and restore now runs on the chunk's owning thread with `biome.restore.perTick` chunks in flight.
+- **`/xmas reload` (and a second `/xmas on`) orphaned gift chests permanently** - lifetime tasks were cancelled and the tracker cleared. Stopping a manager no longer drops its tracking.
+- **Event objects were lost after a server restart** - mobs, decorations and gift chests had no cap, no lifetime and were not removed by `/xmas off`. They are now recognised by their tags and markers and adopted on startup and on chunk load; `/xmas off` additionally sweeps all loaded chunks.
+- **Emergency backups piled up** - one full database copy per normal shutdown, never rotated. Only the newest three are kept.
+- **`ChunkLoadEvent` bypassed the per-tick budget** - every loaded chunk was snapshotted and converted synchronously, including pre-generated chunks far from any player. Chunks are now only queued when a player is within the bubble radius (Folia: handled by the per-player timer).
+- **Wichtel and elves deleted every dropped item in reach**, including player death drops. They now only collect the plugin's decoration items (`wichtel.stealOnlyDecorations: true`; `false` allows other items but never player drops). Random hops no longer teleport mobs into blocks or off ledges.
+- **Snow and ice were left behind after `/xmas off`**, for several reasons that are all fixed:
+  - Region tasks still in flight after `/xmas off` could re-convert chunks the restore had just reset (Folia). Chunk processing now stops as soon as the event is off or a restore runs.
+  - The surface check used a heightmap that ignores single snow layers. The clean-up now uses the `WORLD_SURFACE` heightmap and also checks the block below for ice.
+  - Minecraft blurs biome borders by a few blocks, so snow also fell on the edges of chunks that were never converted and therefore never cleaned. The restore now cleans a four-block strip of every untouched neighbouring chunk.
+  - Grass, podzol and mycelium under removed snow layers kept their white `snowy` top until the next block update. The state is reset explicitly now.
+- **Gaps behind fast-moving players on Folia** - chunks that did not fit into the per-run budget were dropped once the player moved on, and chunks that were not loaded yet were given up after three attempts. Every chunk seen in the bubble radius now stays in a per-player queue (nearest first) until it is converted.
+- **`/xmas storm off` did not end an auto-mode storm** - it now pauses the auto phases until `/xmas storm on` or the next reload, and resends clear weather even if the server flag was already off.
+- The spawn helper no longer falls back to the player's own position; a candidate more than 24 blocks above the player is rejected instead of a fixed `Y > 100` rule that worked badly on high worlds.
+- Gift chests are never placed next to another chest (no accidental double chests with player storage).
+- Region plugins are now declared as `softdepend`, so the WorldGuard/GriefPrevention hook is available on the first start.
+- Database statistics report MB and KB with matching units.
+
+#### Changed
+- Snapshots now store biomes per 4×4 cell, reducing biome snapshot data by 16× while remaining backwards-compatible. Each snapshot also records which columns already had snow or ice on the surface; those columns are kept on restore.
+- Snow layers and ice placed by players while the event is active are recorded and kept on restore, also inside the cleaned border strips.
+- The snow/ice clean-up on restore checks the surface of every column instead of every block between Y 50 and 200, which makes restores a lot cheaper. `fix-diff` cleans snow and ice as well.
+- Biome writes and samples work per 4×4×4 cell (16× fewer `setBiome` calls per chunk).
+- Chunks set with `/xmas biome set` are protected from the automatic bubble until the next stop or restore.
+- Update checker: `updateChecker.enabled` / `notifyOps` config keys, only Modrinth *release* versions count, notifications with clickable Modrinth and GitHub links.
+- New config keys: `biome.restore.removeSnowLayers`, `biome.restore.removeIce`, `wichtel.stealOnlyDecorations`, `snowmen.lifetimeSeconds` (default 600, 0 = never).
+- Default `language` is now `en`.
+- All source comments, Javadoc, debug output and hardcoded messages are English; every player and console message goes through the language files (both files reworked, unused keys removed).
+
+#### Removed
+- Empty `GiftOpenListener` placeholder (replaced by the real gift-open tracking); `OrphanedMobCleanupListener` replaced by `TrackedObjectListener` (adopt or remove).
+
 ## [2.3.0] - 2026-07-03
 
 **Major Update:** Minecraft 26.x support, full Adventure API migration, and a deep thread-safety/reliability overhaul of the entire 2.2.0 feature set.

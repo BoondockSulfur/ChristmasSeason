@@ -3,11 +3,14 @@ package de.boondocksulfur.christmas.manager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
 import de.boondocksulfur.christmas.util.LanguageManager;
@@ -16,53 +19,52 @@ import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 
+/**
+ * Drops glowing decoration items near players. Items carry a PersistentDataContainer
+ * marker so they can be adopted after a restart and so that elves only steal these.
+ */
 public class DecorationManager {
 
     private final ChristmasSeason plugin;
     private final LanguageManager lang;
     private final FoliaSchedulerHelper scheduler;
     private final Random random = new Random();
+    private final NamespacedKey decorationKey;
 
-    // FOLIA FIX: Player-basierte Spawn-Timer (Entity Scheduler)
-    private final java.util.Map<java.util.UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
-
-    // FOLIA FIX: Track spawned decorations by UUID for safe cleanup
-    private final java.util.Set<java.util.UUID> trackedDecorations = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Map<UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<UUID> trackedDecorations = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public DecorationManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
         this.scheduler = plugin.getFoliaScheduler();
+        this.decorationKey = new NamespacedKey(plugin, "decoration");
     }
 
     public void start() {
         stop();
-        // FOLIA FIX: Spawn-Timer sind jetzt Player-basiert (siehe startPlayerSpawning)
-        plugin.debug("DecorationManager gestartet (Folia-kompatibel: Player-basierte Spawns)");
+        plugin.debug("DecorationManager started (per-player spawns)");
     }
 
+    /** Stops the spawn timers; tracked items keep their lifetime tasks. */
     public void stop() {
-        // FOLIA FIX: Stoppe alle Player-basierten Tasks
         for (WrappedTask task : playerSpawnTasks.values()) {
             if (task != null) task.cancel();
         }
         playerSpawnTasks.clear();
-        // Note: trackedDecorations wird NICHT geleert - bleibt für cleanup() erhalten
     }
 
-    /**
-     * Startet Dekorations-Spawning für einen Spieler (Entity Scheduler)
-     * FOLIA-KOMPATIBEL: Läuft auf Entity Scheduler des Players
-     */
-    public void startPlayerSpawning(org.bukkit.entity.Player player) {
+    /** Starts decoration spawning for a player on the player's entity scheduler. */
+    public void startPlayerSpawning(Player player) {
         if (!plugin.getConfig().getBoolean("decoration.enabled", true)) return;
 
-        java.util.UUID uuid = player.getUniqueId();
+        UUID uuid = player.getUniqueId();
         WrappedTask oldTask = playerSpawnTasks.remove(uuid);
         if (oldTask != null) oldTask.cancel();
 
-        int interval = plugin.getConfig().getInt("decoration.intervalSeconds", 25);
+        int interval = Math.max(5, plugin.getConfig().getInt("decoration.intervalSeconds", 25));
         double spawnChance = plugin.getConfig().getDouble("decoration.spawnChance", 0.9);
 
         WrappedTask task = scheduler.runForEntityTimer(player, () -> {
@@ -73,82 +75,101 @@ public class DecorationManager {
             if (random.nextDouble() <= spawnChance) {
                 spawnDecorationNearPlayer(player);
             }
-        }, 40L, interval * 20L);
+        }, () -> playerSpawnTasks.remove(uuid), 40L, interval * 20L);
 
         if (task != null) {
             playerSpawnTasks.put(uuid, task);
-            plugin.debug("Dekorations-Spawning gestartet für " + player.getName());
+            plugin.debug("Decoration spawning started for " + player.getName());
         }
     }
 
-    /**
-     * Stoppt Dekorations-Spawning für einen Spieler
-     */
-    public void stopPlayerSpawning(org.bukkit.entity.Player player) {
+    /** Stops decoration spawning for a player. */
+    public void stopPlayerSpawning(Player player) {
         WrappedTask task = playerSpawnTasks.remove(player.getUniqueId());
         if (task != null) {
             task.cancel();
-            plugin.debug("Dekorations-Spawning gestoppt für " + player.getName());
+            plugin.debug("Decoration spawning stopped for " + player.getName());
         }
     }
 
-    /**
-     * Entfernt alle Dekorations-Items aus der Welt
-     * FOLIA-SAFE: Verwendet tracked UUIDs und schedult Entfernung pro Entity
-     */
+    /** @return {@code true} if the entity is one of our decoration items */
+    public boolean isDecoration(Entity entity) {
+        return entity instanceof Item
+                && entity.getPersistentDataContainer().has(decorationKey, PersistentDataType.BYTE);
+    }
+
+    /** Adopts a decoration item found after a restart: tracks it and starts a fresh lifetime. */
+    public void adopt(Item item) {
+        UUID id = item.getUniqueId();
+        if (!trackedDecorations.add(id)) return;
+        scheduleLifetime(item);
+        plugin.debug("Adopted decoration item " + id);
+    }
+
+    /** @return number of tracked decoration items */
+    public int getTrackedCount() {
+        return trackedDecorations.size();
+    }
+
+    /** Scans all loaded chunks of the snow worlds for decoration items and adopts them. */
+    public void adoptLoaded() {
+        for (World w : plugin.getSnowWorlds()) {
+            scheduler.forEachLoadedChunk(w, chunk -> {
+                for (Entity e : chunk.getEntities()) {
+                    if (isDecoration(e)) adopt((Item) e);
+                }
+            });
+        }
+    }
+
+    /** Removes all decoration items ({@code /xmas off}): tracked ones plus untracked ones in loaded chunks. */
     public void cleanup() {
         int removed = 0;
         int tracked = trackedDecorations.size();
 
-        // FOLIA FIX: Iteriere über tracked UUIDs statt w.getEntitiesByClass()
-        java.util.Iterator<java.util.UUID> it = trackedDecorations.iterator();
+        java.util.Iterator<UUID> it = trackedDecorations.iterator();
         while (it.hasNext()) {
-            java.util.UUID uuid = it.next();
-            org.bukkit.entity.Entity entity = Bukkit.getEntity(uuid);
-
+            UUID uuid = it.next();
+            Entity entity = Bukkit.getEntity(uuid);
             if (entity != null && entity.isValid() && entity instanceof Item) {
-                // FOLIA FIX: Schedule removal auf Entity Scheduler
                 scheduler.runForEntity(entity, () -> {
-                    if (!entity.isDead() && entity.isValid()) {
-                        entity.remove();
-                    }
+                    if (!entity.isDead() && entity.isValid()) entity.remove();
                 });
                 removed++;
             }
-            it.remove(); // Aus Tracking entfernen
+            it.remove();
         }
 
-        plugin.getLogger().info(lang.getMessage("log.cleanup.decorations", removed));
+        for (World w : plugin.getSnowWorlds()) {
+            scheduler.forEachLoadedChunk(w, chunk -> {
+                for (Entity e : chunk.getEntities()) {
+                    if (isDecoration(e)) e.remove();
+                }
+            });
+        }
+
+        lang.logInfo("log.cleanup.decorations", removed);
         if (tracked > removed && plugin.isDebugMode()) {
             plugin.debug("Decorations: " + removed + " removed, " + (tracked - removed) + " already gone");
         }
     }
 
-    /**
-     * Spawnt Dekoration in Nähe eines Spielers
-     * FOLIA-KOMPATIBEL: Wird von Entity Scheduler des Players aufgerufen
-     */
+    /** Drops one decoration item near the player (on the region thread). */
     private void spawnDecorationNearPlayer(Player player) {
         World w = player.getWorld();
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
-        if (!w.getName().equals(worldName)) return;
+        if (!plugin.isSnowWorld(w)) return;
 
         List<String> drops = plugin.getConfig().getStringList("decoration.drops");
         if (drops.isEmpty()) return;
 
-        // FOLIA FIX: Spawne auf Location Scheduler (für findSurface und dropItem)
         Location playerLoc = player.getLocation();
-
         scheduler.runAtLocation(playerLoc, () -> {
-            // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location place = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 7, 5);
-
-            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (place == null) return;
             if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(place)) {
                 plugin.debug("Decoration spawn blocked by region protection at " + place.getBlockX() + "," + place.getBlockZ());
                 return;
             }
-
             place = place.add(0, 0.5, 0);
 
             String entry = drops.get(random.nextInt(drops.size()));
@@ -158,7 +179,7 @@ public class DecorationManager {
             int amount = 1;
             if (split.length > 1) try { amount = Integer.parseInt(split[1]); } catch (NumberFormatException ignored) {}
 
-            ItemStack stack = new ItemStack(mat, amount);
+            ItemStack stack = new ItemStack(mat, Math.max(1, amount));
             net.kyori.adventure.text.Component name = lang.getComponent("entity.decoration");
             ItemMeta meta = stack.getItemMeta();
             if (meta != null) { meta.displayName(name); stack.setItemMeta(meta); }
@@ -167,22 +188,23 @@ public class DecorationManager {
             item.customName(name);
             item.setCustomNameVisible(true);
             item.setPickupDelay(plugin.getConfig().getInt("decoration.pickupDelayTicks", 0));
+            item.getPersistentDataContainer().set(decorationKey, PersistentDataType.BYTE, (byte) 1);
             try { item.setGlowing(plugin.getConfig().getBoolean("decoration.glow", true)); } catch (Throwable ignored) {}
 
-            // FOLIA FIX: Track spawned decoration
             trackedDecorations.add(item.getUniqueId());
-
-            int lifetime = plugin.getConfig().getInt("decoration.lifetimeSeconds", 180);
-            java.util.UUID itemId = item.getUniqueId();
-            scheduler.runForEntityLater(item, () -> {
-                if (!item.isDead() && item.isValid()) {
-                    item.remove();
-                }
-                trackedDecorations.remove(itemId);
-            }, () -> {
-                // FOLIA FIX: retired - Item wurde vorher aufgesammelt/despawnt
-                trackedDecorations.remove(itemId);
-            }, lifetime * 20L);
+            scheduleLifetime(item);
         });
+    }
+
+    /** Removes the item after {@code decoration.lifetimeSeconds}; retired callback keeps the set clean. */
+    private void scheduleLifetime(Item item) {
+        int lifetime = Math.max(5, plugin.getConfig().getInt("decoration.lifetimeSeconds", 180));
+        UUID itemId = item.getUniqueId();
+        scheduler.runForEntityLater(item, () -> {
+            // Resolve by UUID: on Paper the handle may be stale after a chunk reload
+            Entity live = Bukkit.getEntity(itemId);
+            if (live != null && live.isValid()) live.remove();
+            trackedDecorations.remove(itemId);
+        }, () -> trackedDecorations.remove(itemId), lifetime * 20L);
     }
 }

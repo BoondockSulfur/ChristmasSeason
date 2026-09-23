@@ -6,11 +6,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 /**
- * Region Integration - WorldGuard & GriefPrevention support
- * Features:
- * - Check if spawning is allowed in region
- * - Respect region flags and claims
- * - Soft dependency (works without plugins)
+ * Optional WorldGuard and GriefPrevention support (reflection based, soft dependency).
+ * Used to keep gifts, decorations and event mobs out of protected regions and claims.
  */
 public class RegionIntegration {
 
@@ -261,6 +258,82 @@ public class RegionIntegration {
         } catch (Exception e) {
             plugin.debug("GriefPrevention player check failed: " + e.getMessage());
             return true;
+        }
+    }
+
+    // ==================== Biome exclusion ====================
+
+    /**
+     * Checks whether a chunk must be left alone by the biome bubble.
+     *
+     * <p>Sources ({@code biome.exclude.*}): rectangular areas ({@code areas}), WorldGuard
+     * region IDs ({@code worldGuardRegions}, optionally {@code world:id}) and, when
+     * {@code griefPreventionClaims} is set, every GriefPrevention claim. A chunk is excluded
+     * as soon as its centre or one of its corners hits an excluded area.
+     */
+    public boolean isBiomeExcluded(org.bukkit.World world, int chunkX, int chunkZ) {
+        org.bukkit.configuration.ConfigurationSection cfg = plugin.getConfig().getConfigurationSection("biome.exclude");
+        if (cfg == null) return false;
+
+        int minX = chunkX << 4, minZ = chunkZ << 4, maxX = minX + 15, maxZ = minZ + 15;
+
+        for (java.util.Map<?, ?> area : cfg.getMapList("areas")) {
+            Object w = area.get("world");
+            if (w != null && !String.valueOf(w).equals(world.getName())) continue;
+            int x1 = toInt(area.get("x1")), z1 = toInt(area.get("z1")), x2 = toInt(area.get("x2")), z2 = toInt(area.get("z2"));
+            int ax1 = Math.min(x1, x2), ax2 = Math.max(x1, x2), az1 = Math.min(z1, z2), az2 = Math.max(z1, z2);
+            if (maxX >= ax1 && minX <= ax2 && maxZ >= az1 && minZ <= az2) return true;
+        }
+
+        java.util.List<String> wgRegions = cfg.getStringList("worldGuardRegions");
+        boolean gpClaims = cfg.getBoolean("griefPreventionClaims", false);
+        if ((wgRegions.isEmpty() || !worldGuardEnabled) && (!gpClaims || !griefPreventionEnabled)) return false;
+
+        int[][] samples = {{minX + 8, minZ + 8}, {minX, minZ}, {maxX, minZ}, {minX, maxZ}, {maxX, maxZ}};
+        for (int[] s : samples) {
+            Location loc = new Location(world, s[0], 64, s[1]);
+            if (worldGuardEnabled && !wgRegions.isEmpty() && isInWorldGuardRegion(loc, wgRegions)) return true;
+            if (gpClaims && griefPreventionEnabled && !checkGriefPrevention(loc)) return true;
+        }
+        return false;
+    }
+
+    private static int toInt(Object o) {
+        if (o instanceof Number n) return n.intValue();
+        try { return Integer.parseInt(String.valueOf(o).trim()); } catch (Exception e) { return 0; }
+    }
+
+    /** @return {@code true} if one of the listed region IDs applies at the location */
+    private boolean isInWorldGuardRegion(Location location, java.util.List<String> regionIds) {
+        try {
+            Object regionManager = regionContainer.getClass()
+                    .getMethod("get", org.bukkit.World.class)
+                    .invoke(regionContainer, location.getWorld());
+            if (regionManager == null) return false;
+
+            Class<?> vector3Class = Class.forName("com.sk89q.worldedit.math.BlockVector3");
+            Object vector = vector3Class.getMethod("at", double.class, double.class, double.class)
+                    .invoke(null, location.getX(), location.getY(), location.getZ());
+            Object applicable = regionManager.getClass()
+                    .getMethod("getApplicableRegions", vector3Class)
+                    .invoke(regionManager, vector);
+            Iterable<?> regions = (Iterable<?>) applicable.getClass().getMethod("getRegions").invoke(applicable);
+            for (Object region : regions) {
+                String id = String.valueOf(region.getClass().getMethod("getId").invoke(region));
+                for (String wanted : regionIds) {
+                    String w = wanted;
+                    if (w.contains(":")) {
+                        String[] parts = w.split(":", 2);
+                        if (!parts[0].equals(location.getWorld().getName())) continue;
+                        w = parts[1];
+                    }
+                    if (w.equalsIgnoreCase(id)) return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            plugin.debug("WorldGuard exclusion check failed: " + e.getMessage());
+            return false;
         }
     }
 

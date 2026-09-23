@@ -12,10 +12,9 @@ import org.bukkit.inventory.InventoryHolder;
 import de.boondocksulfur.christmas.ChristmasSeason;
 
 /**
- * Schützt Geschenk-Kisten vor Hoppern und Explosionen.
- * Spieler dürfen sie weiterhin öffnen und abbauen - nur automatisches
- * Leerräumen und Zerstörung durch Creeper/TNT werden verhindert.
- * Abschaltbar über gifts.protectChests in der config.yml.
+ * Protects gift chests from hoppers and explosions. Players can still open and break
+ * them - only automated emptying and creeper/TNT damage are prevented.
+ * Can be disabled via {@code gifts.protectChests}.
  */
 public class GiftProtectionListener implements Listener {
 
@@ -33,15 +32,14 @@ public class GiftProtectionListener implements Listener {
         if (holder instanceof Chest chest) {
             return plugin.getGiftManager().isGiftChest(chest.getLocation());
         }
-        // Falls ein Spieler eine zweite Kiste daneben stellt, wird daraus eine
-        // Doppelkiste - beide Hälften prüfen, sonst wäre der Schutz umgehbar
+        // Gift chests are never placed next to another chest, but check both halves anyway
         if (holder instanceof DoubleChest dc) {
             return isGiftHolder(dc.getLeftSide()) || isGiftHolder(dc.getRightSide());
         }
         return false;
     }
 
-    /** Hopper, Hopper-Loren & Co. dürfen Geschenk-Kisten nicht leerräumen */
+    /** Hoppers, hopper minecarts etc. must not empty gift chests. */
     @EventHandler(ignoreCancelled = true)
     public void onInventoryMove(InventoryMoveItemEvent e) {
         if (!protectionEnabled()) return;
@@ -50,7 +48,7 @@ public class GiftProtectionListener implements Listener {
         }
     }
 
-    /** Creeper, TNT etc. zerstören Geschenk-Kisten nicht */
+    /** Creepers, TNT etc. do not destroy gift chests. */
     @EventHandler(ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent e) {
         if (!protectionEnabled()) return;
@@ -58,7 +56,7 @@ public class GiftProtectionListener implements Listener {
                 && plugin.getGiftManager().isGiftChest(b.getLocation()));
     }
 
-    /** Block-Explosionen (z.B. Betten im Nether) ebenfalls abfangen */
+    /** Block explosions (beds in the Nether, respawn anchors) as well. */
     @EventHandler(ignoreCancelled = true)
     public void onBlockExplode(BlockExplodeEvent e) {
         if (!protectionEnabled()) return;

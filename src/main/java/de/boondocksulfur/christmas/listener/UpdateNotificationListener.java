@@ -7,9 +7,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 
-/**
- * Listener der OPs beim Join über verfügbare Updates informiert
- */
+/** Tells operators about an available update a few seconds after they join. */
 public class UpdateNotificationListener implements Listener {
 
     private final ChristmasSeason plugin;
@@ -23,18 +21,14 @@ public class UpdateNotificationListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        if (!player.isOp()) return;
+        if (!plugin.getUpdateChecker().isNotifyOps()) return;
 
-        // Nur OPs benachrichtigen
-        if (!player.isOp()) {
-            return;
-        }
-
-        // Verzögerte Benachrichtigung (3 Sekunden nach Join)
-        // FIX: FoliaSchedulerHelper statt Bukkit.getScheduler() (Folia-kompatibel)
+        // Delayed by three seconds so the message is not lost in the join spam
         scheduler.runForEntityLater(player, () -> {
             if (player.isOnline() && plugin.getUpdateChecker().isUpdateAvailable()) {
                 plugin.getUpdateChecker().sendUpdateNotification(player);
             }
-        }, 60L); // 3 Sekunden
+        }, 60L);
     }
 }

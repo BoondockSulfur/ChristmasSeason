@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import de.boondocksulfur.christmas.ChristmasSeason;
 import de.boondocksulfur.christmas.util.LanguageManager;
 
+/** {@code /xmasgift} - spawns a gift chest at the player's position. */
 public class XmasGiftCommand implements CommandExecutor {
 
     private final ChristmasSeason plugin;
@@ -21,17 +22,23 @@ public class XmasGiftCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!sender.hasPermission("xmas.admin")) {
-            sender.sendMessage(lang.get("no-permission"));
+            lang.send(sender, "no-permission");
             return true;
         }
         if (!(sender instanceof Player p)) {
-            sender.sendMessage("§cOnly available in-game."); // Hinweis: Wird selten gebraucht
+            lang.send(sender, "command.players-only");
             return true;
         }
 
         Location loc = p.getLocation();
-        plugin.getGiftManager().spawnGift(loc.getWorld(), loc);
-        sender.sendMessage(lang.get("gift.spawned"));
+        // Block operations must run on the region owning the location (Folia)
+        plugin.getFoliaScheduler().runAtLocation(loc, () -> {
+            if (plugin.getGiftManager().spawnGift(loc.getWorld(), loc)) {
+                lang.send(sender, "gift.spawned");
+            } else {
+                lang.send(sender, "gift.spawn-failed");
+            }
+        });
         return true;
     }
 }

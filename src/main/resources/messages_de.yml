@@ -1,72 +1,168 @@
 # ========================================
-# ChristmasSeason Plugin - Deutsche Texte
+# ChristmasSeason - Deutsche Texte
+# Farbcodes mit '&'. Schlüssel unter 'log.' sind nur für die Konsole (Farben werden entfernt).
 # ========================================
 
-# Allgemein
 prefix: "&b[Xmas]&7"
 no-permission: "&cKeine Berechtigung."
 
-# Commands - /xmas
+# Befehle - /xmas
 command:
   usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  players-only: "&cDieser Befehl geht nur im Spiel."
 
-  # ON (Quotes needed because YAML interprets 'on' as boolean)
+  # Anführungszeichen nötig, weil YAML 'on'/'off' als Boolean liest
   "on":
-    success: "&aEvent aktiviert. &7(Schnee-Features laufen wieder)"
+    success: "&aEvent aktiviert. &7(Schnee-Features laufen)"
+    restore-running: "&c&lEin Biome-Restore läuft noch! &7Bitte warten, bis er abgeschlossen ist."
+    already-active: "&e&lChristmasSeason ist bereits aktiv. &7Features werden neu gestartet, bestehende Snapshots bleiben erhalten."
+    backup-failed: "&c&lWARNUNG: SAFE-Backup konnte nicht erstellt werden! &7Speicherplatz und Rechte im Backup-Ordner prüfen."
+    snapshot-disabled: "&c&lWARNUNG: Snapshot-System ist deaktiviert (enableSnapshot: false)! &cBiome werden OHNE Backup geändert - kein automatisches Restore möglich."
 
-  # OFF (Quotes needed because YAML interprets 'off' as boolean)
   "off":
-    cleanup: "&7Entferne Event-Entities & Items..."
-    success: "&cEvent deaktiviert. &7(Biome & Schnee werden in Batches zurückgesetzt)"
+    cleanup: "&7Entferne Event-Mobs, Items und Geschenkkisten..."
+    success: "&cEvent deaktiviert. &7(Biome und Schnee werden in Batches zurückgesetzt)"
+    backup-failed: "&c&lWARNUNG: Timestamp-Backup fehlgeschlagen! &7Restore läuft trotzdem."
 
-  # STATUS
   status:
     message: "&bStatus: {0} &7| Schneesturm: {1}"
     active: "&aAN"
     inactive: "&cAUS"
+    region: "&7Region-Schutz: &f{0}"
+    restoring: "&eBiome-Restore läuft: &f{0}"
+    worlds: "&7Schneewelten: &f{0}"
+    objects: "&7Verfolgt: &f{0} &7Geschenkkisten, &f{1} &7Dekorationen, &f{2} &7Wichtel/Elfen, &f{3} &7Schneemänner"
+    snapshot: "&7Snapshot-Chunks: &f{0}"
+    converting: "&eWeltkonvertierung läuft: &f{0}"
+    schedule: "&7Zeitplan: &f{0} &7Tage bis zum Start, &f{1} &7Tage verbleibend"
+    gifts-opened: "&7Bisher geöffnete Geschenke: &f{0}"
 
-  # RELOAD
   reload:
-    success: "&aConfig neu geladen."
+    success: "&aConfig und Sprache neu geladen."
+    error: "&cReload fehlgeschlagen - siehe Konsole."
 
-  # BIOME
   biome:
-    usage: "&b/xmas biome &7<set|clearsnap|status|compare|fix-diff>"
+    usage: "&b/xmas biome &7<set|clearsnap|status|info|compare|fix-diff|convert-all>"
 
     set:
-      usage: "&b/xmas biome set &e<BIOME> &7[radius_chunks]"
-      unknown-biome: "&cUnbekanntes Biome."
-      invalid-radius: "&cUngültige Zahl für Radius."
-      success: "&aBiome gesetzt: &e{0} &7Chunk(s)."
+      usage: "&b/xmas biome set &e<BIOM> &7[radius_chunks]"
+      unknown-biome: "&cUnbekanntes Biom."
+      invalid-radius: "&cUngültige Zahl für den Radius."
+      only-active: "&c/xmas biome set funktioniert nur, wenn ChristmasSeason aktiv ist. &7Zuerst '/xmas on' ausführen."
+      success: "&aBiom gesetzt: &e{0} &7Chunk(s) eingeplant."
 
     restore:
-      success: "&aBiome auf Seed zurückgesetzt: &e{0} &7Chunk(s)."
+      disabled: "&c&lDieser Befehl ist deaktiviert &7(er konnte den Server einfrieren). Biome werden mit '/xmas off' zurückgesetzt."
 
     clearsnap:
       success: "&aSnapshot gelöscht."
+      blocked-active: "&c&lFEHLER: ChristmasSeason ist aktiv! &7Das Löschen des Snapshots bei geänderten Biomen würde die Originale dauerhaft verlieren. Zuerst '/xmas off'."
+      no-backup: "&c&lWARNUNG: Kein Backup vorhanden! &7Erst eines anlegen: '/xmas backup create'"
 
     status:
-      message: "&bBiomeSnapshot: &e{0} &7aktiv"
+      header: "&7═══ Snapshot-Datenbank ═══"
+      db-inactive: "&c✗ Datenbank: NICHT AKTIV &7(Event inaktiv oder enableSnapshot: false)"
+      db-active: "&a✓ Datenbank: AKTIV"
+      db-chunks: "&7  Chunks: &f{0}"
+      db-size: "&7  Größe: &f{0} MB"
+      db-error: "&c✗ Fehler beim Lesen der Datenbank: {0}"
 
-  # STORM
+    compare:
+      usage: "&b/xmas biome compare &e<Backup-ID> &7- vergleicht aktuelle Biome mit einem Backup"
+      running: "&7Vergleiche Biome mit Backup... &7Das kann etwas dauern."
+      failed: "&c✗ Vergleich fehlgeschlagen! Siehe Konsole."
+      header: "&6═══ VERGLEICHSERGEBNIS ═══"
+      backup: "&7Backup: &f{0}"
+      compared: "&7Chunks verglichen: &f{0}"
+      identical: "&7Identisch: &a{0} &7({1}%)"
+      differences: "&7Unterschiedlich: &c{0}"
+      top-header: "&7Top 5 Chunks mit Unterschieden:"
+      top-entry: "&7  {0}. &fChunk[{1}, {2}] &7- &c{3} &7Zellen"
+      fix-hint: "&eKorrektur: &f/xmas biome fix-diff {0}"
+      footer: "&6═══════════════════════════"
+
+    fix-diff:
+      usage: "&b/xmas biome fix-diff &e<Backup-ID> &7[confirm] - stellt abweichende Chunks aus einem Backup her"
+      warning: "&c&lWARNUNG: &7Alle abweichenden Chunks werden mit den Backup-Biomen überschrieben!"
+      confirm: "&eBestätigen mit: &f/xmas biome fix-diff {0} confirm"
+      running: "&7Korrigiere Unterschiede... &7Das kann einige Minuten dauern."
+      done: "&a✓ Korrektur abgeschlossen! &7Wiederhergestellt: &f{0} &7Chunks"
+      failed: "&c✗ Korrektur fehlgeschlagen! Siehe Konsole."
+
+    info:
+      header: "&6═══ Biom-Info bei &f{0} {1} {2} &6═══"
+      current: "&7Aktuelles Biom: &f{0} &7- natürlich verschneit: {1}&7, natürlich vereist: {2}"
+      original: "&7Original (Snapshot): &f{0} &7- natürlich verschneit: {1}&7, natürlich vereist: {2}"
+      no-snapshot: "&7Kein Snapshot für diesen Chunk &8(nie konvertiert oder nach dem Restore gelöscht)"
+      flags: "&7Ausgeschlossen: {0} &7| in dieser Sitzung verarbeitet: {1} &7| manuell gesetzt: {2}"
+      range: "&7Konfigurierter Y-Bereich: &f{0} &7bis &f{1}"
+      yes: "&aja"
+      no: "&cnein"
+    convert-all:
+      usage: "&b/xmas biome convert-all &e[Radius_Chunks] [Welt] confirm &7- konvertiert den ganzen Bereich um den Spawn"
+      warning: "&c&lWARNUNG: &7Das lädt und konvertiert &f{0} &7Chunks in &f{1}&7. Die Snapshot-Datenbank wächst entsprechend."
+      confirm: "&eBestätigen mit: &f/xmas biome convert-all {0} {1} confirm"
+      started: "&a✓ Konvertierung gestartet: &f{0} &7Chunks in &f{1}&7. Fortschritt in der Konsole und unter '/xmas status'."
+      running: "&eEs läuft bereits eine Konvertierung: &f{0} &7- '/xmas biome convert-all cancel' bricht ab."
+      cancelled: "&c✗ Konvertierung abgebrochen."
+      only-active: "&cconvert-all funktioniert nur, wenn ChristmasSeason aktiv ist."
+      not-snow-world: "&cDiese Welt ist keine Schneewelt (siehe snowWorld/snowWorlds in der config.yml)."
+
+  debug:
+    "on": "&a✓ Debug-Modus aktiviert. &7Tipp: '/xmas debug verbose' für noch mehr Details."
+    "off": "&c✗ Debug-Modus deaktiviert."
+    verbose-on: "&a✓ Verbose-Debug aktiviert &7(inklusive Biome-Snapshot-Details)."
+    verbose-off: "&c✗ Verbose-Debug deaktiviert. &7Normale Debug-Logs bleiben aktiv."
+
   storm:
     usage: "&b/xmas storm &7<on|off|toggle|status|pulse>"
-
     "on": "&bSchneesturm: &aAN"
     "off": "&bSchneesturm: &cAUS"
     toggle: "&bSchneesturm: {0}"
     status: "&bSchneesturm: {0}"
-
     pulse:
       success: "&bSchneesturm: &e{0}&7s Impuls."
       invalid-duration: "&cUngültige Zahl für Sekunden."
       world-not-found: "&cZielwelt nicht gefunden."
 
-# Commands - /xmasgift
+  update:
+    usage: "&b/xmas update &7<check>"
+    checking: "&7Prüfe auf Updates..."
+    available: "&a&lUpdate verfügbar! &7Aktuell: &c{0} &7- Neueste: &a{1}"
+    links: "&7Download: &f{0} &7| &f{1}"
+    up-to-date: "&a✓ Du verwendest die neueste Version &7({0})."
+    failed: "&c✗ Update-Prüfung fehlgeschlagen. &7Keine Verbindung zu Modrinth oder GitHub."
+
+  backup:
+    usage: "&b/xmas backup &7<list|restore|create|clear>"
+    restoring: "&7Stelle Backup wieder her..."
+    restored: "&a✓ Backup wiederhergestellt!"
+    restore-failed: "&c✗ Wiederherstellung fehlgeschlagen! Siehe Konsole."
+    creating: "&7Erstelle Backup..."
+    created: "&a✓ Backup erstellt!"
+    create-failed: "&c✗ Backup fehlgeschlagen! Siehe Konsole."
+
+  feature:
+    usage: "&b/xmas feature &e<Name> <on|off> &7- schaltet ein Feature zur Laufzeit um (wird in der config.yml gespeichert)"
+    unknown: "&cUnbekanntes Feature: &f{0}"
+    status-on: "&7Feature &f{0}&7: &aaktiv"
+    status-off: "&7Feature &f{0}&7: &cinaktiv"
+    enabled: "&a✓ Feature &f{0} &aaktiviert."
+    disabled: "&c✗ Feature &f{0} &cdeaktiviert."
+
+  stats:
+    header: "&6═══ Geschenk-Statistik &7(gesamt geöffnet: &f{0}&7) ═══"
+    entry: "&7  {0}. &f{1} &7- &e{2}"
+    player: "&7{0}: &e{1} &7Geschenke geöffnet, &e{2} &7Adventstürchen"
+    unknown-player: "&cUnbekannter Spieler: &f{0}"
+
+# Befehle - /xmasgift
 gift:
   spawned: "&aGeschenk gespawnt!"
+  spawn-failed: "&cHier wurde kein Geschenk platziert &7(eine andere Kiste liegt direkt daneben)."
+  opened: "&a🎁 Frohe Weihnachten! &7Du hast bisher &e{0} &7Geschenk(e) geöffnet."
 
-# Entity Namen
+# Namen von Mobs und Items
 entity:
   wichtel: "&aWichtel"
   elf: "&bElf"
@@ -74,151 +170,205 @@ entity:
   decoration: "&aWeihnachts-Deko"
   gift-chest: "&c&lWeihnachts-Geschenk"
 
-# Broadcast-Nachrichten
+# Broadcasts
 broadcast:
   gift-spawned: "&c🎁 Ein Weihnachts-Geschenk ist in &e{0} &cbei &e{1} {2} {3} &cerschienen!"
+  gift-opened: "&a🎁 &e{0} &ahat ein Weihnachts-Geschenk bei &e{1} {2} {3} &ageöffnet!"
+  event-activated: "&b❄ &fDie Weihnachtszeit hat begonnen! &7Schnee, Geschenke und festliche Gesellschaft warten."
+  event-deactivated: "&b❄ &fDie Weihnachtszeit ist vorbei. &7Danke fürs Mitfeiern!"
 
-# Manager-Logs (Console)
+# Adventskalender
+advent:
+  usage: "&b/advent &7[status|<Tag>]"
+  disabled: "&cDer Adventskalender ist deaktiviert."
+  event-inactive: "&cDer Adventskalender ist nur verfügbar, solange das Weihnachts-Event aktiv ist."
+  not-in-season: "&cDer Adventskalender läuft vom {0}.{1}. bis {2}.{3}."
+  invalid-day: "&cBitte einen Tag zwischen {0} und {1} wählen."
+  future-day: "&cTürchen {0} ist noch nicht offen - Geduld!"
+  no-catch-up: "&cVerpasste Türchen können auf diesem Server nicht nachgeholt werden."
+  already-claimed: "&eTürchen {0} hast du heute schon geöffnet."
+  claimed: "&a🎄 Türchen {0} geöffnet! &7Deine Belohnung liegt im Inventar."
+  broadcast: "&a🎄 &e{0} &ahat Türchen &e{1} &ades Adventskalenders geöffnet!"
+  status-header: "&6═══ Adventskalender &7({0}/{1} Türchen geöffnet) ═══"
+  today-claimed: "&7Das heutige Türchen ({0}) ist bereits offen."
+  today-open: "&eTürchen {0} wartet auf dich: &f/advent"
+
+# Update-Hinweis für Operatoren (Links werden klickbar angehängt)
+update:
+  header: "&8&l&m                                    "
+  available: "&b&lChristmasSeason &7- &aUpdate verfügbar!"
+  current: "&7Aktuelle Version: &c{0}"
+  latest: "&7Neueste Version:  &a{0}"
+  download: "&7Download:"
+  footer: "&8&l&m                                    "
+
+# Konsolen-Logs
 log:
-  language-loaded: "Language loaded: {0}"
+  reload-error: "Reload fehlgeschlagen: {0}"
+
+  config:
+    unknown-target-biome: "config.yml: Unbekanntes Biom in biome.target: '{0}' - es wird SNOWY_PLAINS verwendet."
+    unknown-material: "config.yml: Unbekanntes Material '{0}' in {1} - Eintrag wird ignoriert."
+    unknown-enchantment: "config.yml: Unbekannte Verzauberung '{0}' in {1} - übersprungen."
+    loot-entry-invalid: "config.yml: Ungültiger Loot-Eintrag in {0} - MATERIAL:Anzahl oder die erweiterte Form verwenden."
+    unknown-sound: "config.yml: Unbekannter Sound '{0}' - es wird kein Sound abgespielt."
+    world-not-found: "config.yml: Schneewelt '{0}' ist nicht geladen."
+    invalid-timezone: "config.yml: Ungültige Zeitzone '{0}' - es wird die Server-Zeitzone verwendet."
+
+  schedule:
+    enabled: "Zeitplan aktiv: {0} bis {1} ({2})"
+    invalid-date: "config.yml: Ungültiges Zeitplan-Datum '{0}' (Format MM-dd)"
+    activating: "Zeitplan: Saisonfenster erreicht - ChristmasSeason wird aktiviert."
+    deactivating: "Zeitplan: Saisonfenster vorbei - ChristmasSeason wird deaktiviert."
+
+  convert:
+    progress: "Weltkonvertierung: {0}/{1} Chunks"
+    complete: "Weltkonvertierung abgeschlossen: {0} Chunks in {1}s"
+
+  startup:
+    separator: "═══════════════════════════════════════════"
+    active-without-db-1: " WARNUNG: ChristmasSeason ist aktiv, aber keine Snapshot-Datenbank vorhanden!"
+    active-without-db-2: " Biome wurden möglicherweise geändert und können nicht zurückgesetzt werden."
+    active-without-db-3: " Prüfen: /xmas backup list (verfügbare Backups)"
+    db-corrupt-1: " DATENBANK-KORRUPTION ERKANNT!"
+    db-corrupt-2: " Integritätsprüfung: {0}"
+    db-corrupt-3: " Empfehlung: /xmas backup restore SAFE confirm"
+    db-check-failed: "Datenbank-Integritätsprüfung fehlgeschlagen: {0} - die Datenbank könnte beschädigt sein, siehe /xmas backup list"
+    emergency-found-1: " {0} Notfall-Backup(s) gefunden - der Server wurde gestoppt, während ChristmasSeason aktiv war."
+    emergency-found-2: " Nach einem Neustart während des Events normal. Falls Biome falsch aussehen: /xmas backup list -> /xmas backup restore <ID> confirm"
+    stopped-while-active: "Server stoppt, während ChristmasSeason AKTIV ist - erstelle Notfall-Backup der Biome-Datenbank."
 
   cleanup:
     decorations: "Dekorationen entfernt: {0}"
-    gifts: "Geschenke entfernt: {0}"
-    wichtel: "Wichtel & Elfen entfernt: {0} (Tracked: {1} Wichtel, {2} Elfen)"
+    gifts: "Geschenkkisten entfernt: {0}"
+    wichtel: "Wichtel & Elfen entfernt: {0} (verfolgt: {1} Wichtel, {2} Elfen)"
     snowmen: "Schneemänner entfernt: {0}"
-    snowman-world-not-found: "Schneemann-Cleanup: Welt nicht gefunden!"
-
-    world-not-found: "{0}-Cleanup: Welt nicht gefunden!"
 
   biome:
-    database-ready: "Biome-Snapshot Datenbank bereit."
+    database-ready: "Biome-Snapshot-Datenbank bereit."
     error-opening-database: "Fehler beim Öffnen der Snapshot-Datenbank: {0}"
     snapshot-system-disabled: "Snapshot-System deaktiviert! Kein automatisches Restore möglich."
-    system-disabled-config: "Biome-Snapshot System deaktiviert (enableSnapshot: false)"
+    system-disabled-config: "Biome-Snapshot-System deaktiviert (enableSnapshot: false)"
 
-    restore-error-header: "&c═══ BIOME RESTORE FEHLER ═══"
-    no-snapshot-available: "&cKein Biome-Snapshot vorhanden! Restore nicht möglich."
-    snapshot-disabled-or-error: "&cSnapshot-System war deaktiviert oder Datenbank-Fehler."
-    solution-enable-snapshot: "&7Lösung: Setze 'enableSnapshot: true' in config.yml"
+    restore-error-header: "═══ BIOME-RESTORE FEHLER ═══"
+    no-snapshot-available: "Kein Biome-Snapshot vorhanden! Restore nicht möglich."
+    snapshot-disabled-or-error: "Snapshot-System war deaktiviert oder ein Datenbankfehler ist aufgetreten."
+    solution-enable-snapshot: "Lösung: 'enableSnapshot: true' in config.yml setzen"
+    restore-already-running: "Biome-Restore läuft bereits - zweiter Aufruf ignoriert."
 
-    restore-start-header: "&6═══ BIOME RESTORE START ═══"
-    chunks-in-database: "&7Chunks in Datenbank: &f{0}"
-    snapshot-empty: "&cBiome-Snapshot ist leer! Kein Reset möglich."
-    snapshot-timing-question: "&7Wurden Chunks gesnapshoted während 'xmas on' aktiv war?"
-    separator-line: "&6═══════════════════════════"
-    starting-restore: "&aStarte Restore für {0} Chunks..."
-    budget: "&7Budget: {0} Chunks/Tick"
+    restore-start-header: "═══ BIOME-RESTORE START ═══"
+    chunks-in-database: "Chunks in der Datenbank: {0}"
+    snapshot-empty: "Biome-Snapshot ist leer! Nichts zurückzusetzen."
+    snapshot-timing-question: "Wurden Chunks gesnapshottet, während 'xmas on' aktiv war?"
+    separator-line: "═══════════════════════════"
+    starting-restore: "Starte Restore für {0} Chunks..."
+    budget: "Budget: {0} Chunks/Tick"
 
     world-not-found: "Welt nicht gefunden: {0}"
-    chunk-data-not-in-db: "Chunk-Daten nicht in DB: {0},{1}"
+    chunk-data-not-in-db: "Chunk-Daten nicht in der Datenbank: {0},{1}"
     chunk-error: "Fehler bei Chunk {0},{1}: {2}"
-    world-not-found-restore: "Welt nicht gefunden beim Restore: {0}"
-    chunk-load-failed: "Chunk konnte nicht geladen werden: {0},{1}"
-    error-loading-chunk: "Fehler beim Laden von Chunk {0},{1}: {2}"
     error-restoring-chunk: "Fehler beim Restore von Chunk {0},{1}: {2}"
-    error-deleting-chunk-db: "Fehler beim Löschen von Chunk aus DB: {0},{1} - {2}"
-    chunk-not-restored: "Chunk {0},{1} wurde NICHT restored - bleibt in DB für nächsten Versuch!"
-    chunk-not-loaded-db: "Chunk {0},{1} nicht geladen - bleibt in DB für nächsten Versuch!"
-    critical-restore-error: "Kritischer Fehler beim Restore von Chunk: {0}"
-    restore-progress: "&7Biome-Reset: &f{0}/{1} &7(Restored: &a{2}&7, Fehler: &c{3}&7)"
+    chunk-not-restored: "Chunk {0},{1} wurde NICHT zurückgesetzt - bleibt für den nächsten Versuch in der Datenbank."
+    chunk-not-loaded-db: "Chunk {0},{1} konnte nicht geladen werden - bleibt für den nächsten Versuch in der Datenbank."
+    chunks-kept-for-retry: "{0} Chunk(s) nicht zurückgesetzt - ihre Snapshots bleiben für das nächste '/xmas off' in der Datenbank."
+    restore-progress: "Biome-Restore: {0}/{1} (zurückgesetzt: {2}, Fehler: {3})"
 
-    restore-complete-header: "&a═══ BIOME RESTORE FERTIG ═══"
-    processed: "&7Verarbeitet: &f{0} Chunks"
-    restored-count: "&7Wiederhergestellt: &a{0} Chunks"
-    error-count: "&7Fehler: &c{0} Chunks"
-    duration: "&7Dauer: &f{0}s"
-    separator-footer: "&a════════════════════════════"
+    restore-complete-header: "═══ BIOME-RESTORE FERTIG ═══"
+    processed: "Verarbeitet: {0} Chunks"
+    restored-count: "Wiederhergestellt: {0} Chunks"
+    error-count: "Fehler: {0} Chunks"
+    duration: "Dauer: {0}s"
+    separator-footer: "════════════════════════════"
 
-    error-clearing-db: "Fehler beim Leeren/Schließen der DB: {0}"
-    fatal-error: "&cFATALER FEHLER beim Biome-Reset: {0}"
-    error-retrieving-data: "&cFehler beim Abrufen der Chunk-Daten: {0}"
+    error-clearing-db: "Fehler beim Leeren/Schließen der Datenbank: {0}"
+    fatal-error: "FATALER FEHLER beim Biome-Restore: {0}"
+    error-retrieving-data: "Fehler beim Abrufen der Chunk-Daten: {0}"
     snapshot-deleted: "Biome-Snapshot gelöscht."
     error-deleting-snapshot: "Fehler beim Löschen des Snapshots: {0}"
-    error-saving-snapshot: "Fehler beim Speichern von Chunk-Snapshot: {0}"
+    error-saving-snapshot: "Fehler beim Speichern des Chunk-Snapshots: {0}"
 
-    reset-start: "Starte Biome-Reset für {0} Chunks..."
-    reset-complete: "Biome-Reset abgeschlossen!"
-    ice-removed-debug: "Entferne Eis in Biome: {0} (isIcy={1})"
+  compare:
+    backup-not-found: "Backup-Datei nicht gefunden: {0}"
+    start: "Vergleiche {0} Chunks mit der aktuellen Welt..."
+    progress: "Fortschritt: {0}/{1} ({2} Unterschiede)"
+    complete: "Vergleich abgeschlossen: {0} Chunks verglichen, {1} identisch, {2} unterschiedlich"
+    error: "Fehler beim Vergleich: {0}"
+    recomputing: "Erstelle Vergleich..."
+    nothing-to-fix: "Keine Unterschiede gefunden - nichts zu korrigieren."
+    fix-start: "Korrigiere {0} Chunks..."
+    fix-progress: "Fortschritt: {0}/{1} Chunks korrigiert"
+    fix-complete: "Korrektur abgeschlossen: {0} Chunks wiederhergestellt"
+    fix-error: "Fehler bei der Korrektur: {0}"
+    timeout: "Eine Chunk-Aufgabe wurde nicht innerhalb von {0}s fertig - Abbruch (Plugin deaktiviert oder Welt entladen?)"
 
-  # Backup-System
   backup:
     directory-created: "Backup-Verzeichnis erstellt: {0}"
     safe-created: "SAFE-Backup erstellt in '{0}' ({1} KB)"
     timestamp-created: "Backup erstellt: {0} ({1} KB)"
     emergency-created: "NOTFALL-Backup erstellt: {0} ({1} KB)"
-    emergency-warning: "  -> Server wurde gestoppt waehrend xmas ON aktiv war!"
     error-creating-safe: "Fehler beim Erstellen des SAFE-Backups: {0}"
     error-creating-timestamp: "Fehler beim Erstellen des Timestamp-Backups: {0}"
     error-creating-emergency: "Fehler beim Erstellen des Notfall-Backups: {0}"
-    error-deleting: "Fehler beim Loeschen von Backup '{0}'"
+    error-deleting: "Fehler beim Löschen von Backup '{0}'"
     file-not-found: "Backup-Datei nicht gefunden: {0}"
-    closing-database: "Schliesse Datenbank fuer Backup-Wiederherstellung..."
+    restore-while-active: "Backup-Wiederherstellung, während das Event AKTIV ist - der Biome-Manager wird um die Kopie herum neu gestartet. Empfehlung: zuerst '/xmas off'."
+    closing-database: "Schließe Datenbank für die Backup-Wiederherstellung..."
     restored: "Backup '{0}' wiederhergestellt ({1} KB)"
     error-restoring: "Fehler beim Wiederherstellen des Backups: {0}"
-    database-reopened: "Datenbank neu geoeffnet."
-    cleared: "{0} Backup(s) geloescht."
+    database-reopened: "Datenbank neu geöffnet."
+    cleared: "{0} Backup(s) gelöscht."
     list-header: "&6=== BACKUPS ==="
     list-entry: "&7  [{0}] &f{1} &7({2} KB)"
     list-empty: "&7Keine Backups vorhanden."
     list-footer: "&6================"
-    restore-usage: "&b/xmas backup restore &e<ID>"
-    invalid-id: "&cUngueltige Backup-ID."
-    restore-confirm: "&aBitte bestaetige Wiederherstellung:"
-    restore-warning: "&c  Aktuelle Datenbank wird ersetzt!"
+    restore-usage: "&b/xmas backup restore &e<ID> &7[confirm]"
+    invalid-id: "&cUngültige Backup-ID. &7Siehe /xmas backup list"
+    restore-confirm: "&aBitte Wiederherstellung bestätigen:"
+    restore-warning: "&c  Die aktuelle Datenbank wird ersetzt!"
     restore-command: "&e  /xmas backup restore {0} confirm"
 
   database:
-    jdbc-not-found: "SQLite JDBC Driver nicht gefunden! Plugin kann nicht funktionieren."
-    opened: "Biome-Snapshot Datenbank geöffnet: {0}"
-    cleared: "Biome-Snapshot Datenbank geleert."
-    closed: "Biome-Snapshot Datenbank geschlossen."
+    jdbc-not-found: "SQLite-JDBC-Treiber nicht gefunden! Das Plugin kann nicht arbeiten."
+    opened: "Biome-Snapshot-Datenbank geöffnet: {0}"
+    cleared: "Biome-Snapshot-Datenbank geleert."
+    closed: "Biome-Snapshot-Datenbank geschlossen."
     error-closing: "Fehler beim Schließen der Datenbank: {0}"
-    error-compressing: "Fehler beim Komprimieren von Biome-Daten: {0}"
-    unexpected-end-decompress: "Unerwartetes Ende beim Dekomprimieren von Biome-Daten!"
-    corrupted-name-too-long: "KORRUPTE DATENBANK: Biome-Namenslänge zu groß ({0} bytes, max 50)"
-    stream-misalignment: "Stream-Misalignment erkannt! Datenbank ist beschädigt."
-    stream-premature-end: "Stream endete vorzeitig beim Lesen von Biome-Name! Erwartet={0}, bekommen={1}"
-    unknown-biome-name: "Unbekannter Biome-Name: {0}"
-    error-loading-biome: "Fehler beim Laden von Biome: {0}"
-    error-decompressing: "Fehler beim Dekomprimieren von Biome-Daten: {0}"
-    null-biome-snapshot: "NULL Biome bei Snapshot-Erstellung @ Layer={0}, Index={1}"
-    error-compressing-3d: "Fehler beim Komprimieren von 3D Biome-Daten: {0}"
-    invalid-3d-format: "Kein 3D-Format erkannt! Magic byte: {0}"
-    3d-snapshot-info: "3D-Snapshot: yLayers={0}, format={1}"
-    unexpected-end-3d: "Unerwartetes Ende in 3D Biome-Daten!"
-    empty-3d-name: "Leerer 3D Biome-Name @ Layer={0}, Index={1}"
-    corrupted-3d-name-too-long: "KORRUPTE DATENBANK: Biome-Namenslänge zu groß ({0} bytes, max 50)"
-    stream-misalignment-3d: "Stream-Misalignment erkannt! Datenbank ist beschädigt."
-    solution-clearsnap: "Lösung: /xmas biome clearsnap und Chunks neu laden für frischen Snapshot"
-    stream-premature-3d: "Stream endete vorzeitig beim Lesen von Biome-Name! Erwartet={0}, bekommen={1}"
-    invalid-3d-name-empty: "Ungültiger 3D Biome-Name (leer/null) - verwende PLAINS"
-    unknown-3d-biome: "Unbekannter 3D Biome-Name: '{0}' - verwende PLAINS"
-    error-parsing-biome: "Fehler beim Parsen von Biome-Name '{0}': {1}"
-    old-format-warning: "Lade Snapshot im alten Ordinal-Format - kann fehlerhaft sein!"
-    unexpected-end-3d-ordinal: "Unerwartetes Ende in 3D Biome-Daten!"
-    invalid-biome-ordinal: "Ungültiger Biome-Ordinal: {0} (max: {1})"
-    error-decompressing-3d: "Fehler beim Dekomprimieren von 3D Biome-Daten: {0}"
-    delete-chunk-error: "Fehler beim Löschen von Chunk aus DB: {0}"
-    stats-header: "=== Biome-Snapshot Statistiken ==="
+    checkpoint-failed: "WAL-Checkpoint fehlgeschlagen: {0} - ein jetzt erstelltes Backup kann unvollständig sein."
+    null-biome-snapshot: "NULL-Biom bei der Snapshot-Erstellung @ layer={0}, x={1}, z={2} - verwende PLAINS"
+    error-compressing-3d: "Fehler beim Komprimieren der 3D-Biome-Daten: {0}"
+    invalid-3d-format: "Unbekanntes Snapshot-Format! Magic-Byte: {0}"
+    unexpected-end-3d: "Unerwartetes Ende der 3D-Biome-Daten!"
+    empty-3d-name: "Leerer Biom-Name @ layer={0}, x={1}, z={2} - verwende PLAINS"
+    corrupted-3d-name-too-long: "KORRUPTE DATENBANK: Biom-Namenslänge {0} @ layer={1}, x={2}, z={3}"
+    stream-misalignment-3d: "Stream-Misalignment erkannt! Die Datenbank ist beschädigt."
+    solution-clearsnap: "Lösung: /xmas biome clearsnap und Chunks neu laden für einen frischen Snapshot"
+    stream-premature-3d: "Stream endete vorzeitig beim Lesen eines Biom-Namens! erwartet={0}, erhalten={1}"
+    unknown-3d-biome: "Unbekanntes Biom '{0}' im Snapshot (Datapack entfernt?) - verwende PLAINS"
+    error-parsing-biome: "Fehler beim Parsen des Biom-Keys '{0}': {1}"
+    old-format-warning: "Lade Snapshot im alten Ordinal-Format - Biom-Zuordnung kann abweichen!"
+    invalid-biome-ordinal: "Ungültiger Biom-Ordinal: {0} (max: {1})"
+    error-decompressing-3d: "Fehler beim Dekomprimieren der 3D-Biome-Daten: {0}"
+    delete-chunk-error: "Fehler beim Löschen des Chunks aus der Datenbank: {0}"
+    stats-header: "=== Biome-Snapshot-Statistik ==="
     stored-chunks: "Gespeicherte Chunks: {0}"
-    database-size: "Datenbankgröße: {0} KB"
-    average-per-chunk: "Durchschnitt pro Chunk: {0} bytes"
+    database-size: "Datenbankgröße: {0} MB"
+    average-per-chunk: "Durchschnitt pro Chunk: {0} KB"
     stats-footer: "=================================="
-    error-retrieving-stats: "Fehler beim Abrufen der Statistiken: {0}"
+    error-retrieving-stats: "Fehler beim Abrufen der Statistik: {0}"
 
-  # Debug-Logs (nur mit /xmas debug verbose sichtbar)
+  update:
+    check-failed: "Update-Prüfung fehlgeschlagen: keine Verbindung zu Modrinth oder GitHub."
+    available: "ChristmasSeason-Update verfügbar! Aktuell: {0} - Neueste: {1}"
+    download: "Download: {0} | {1}"
+
+  # Debug-Logs (sichtbar mit /xmas debug verbose)
   debug:
     restore:
       chunk: "[RESTORE] Stelle Chunk {0},{1} wieder her"
       snapshot-info: "[RESTORE] Snapshot: yStart={0}, yStep={1}, layers={2}"
-      biomes-found: "[RESTORE] Snapshot enthält Biomes: {0}"
-      complete: "[RESTORE] Wiederhergestellt: {0} Biome-Positionen"
-
+      complete: "[RESTORE] Wiederhergestellt: {0} Biom-Zellen"
     snapshot:
       creating: "[SNAPSHOT] Erstelle 3D-Snapshot für Chunk {0},{1}"
-      biomes-found: "[SNAPSHOT] Gefundene Biomes: {0}"
-      warning-snowy: "[SNAPSHOT] WARNUNG: Chunk {0},{1} ist bereits SNOWY_PLAINS!"
-      warning-false-data: "[SNAPSHOT] Snapshot würde FALSCHE Daten speichern!"
-      warning-skipped: "[SNAPSHOT] → Snapshot ÜBERSPRUNGEN!"
-      saved: "[SNAPSHOT] Gespeichert: {0},{1} ({2} layers)"
+      biomes-found: "[SNAPSHOT] Gefundene Biome: {0}"
+      warning-snowy: "[SNAPSHOT] Chunk {0},{1} ist bereits 100% Zielbiom - Snapshot wird trotzdem geschrieben (Restore-Fallback)"
+      saved: "[SNAPSHOT] Gespeichert: {0},{1} ({2} Schichten)"

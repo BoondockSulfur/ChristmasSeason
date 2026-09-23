@@ -2,12 +2,15 @@ package de.boondocksulfur.christmas.manager;
 
 import org.bukkit.*;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Chest;
-import org.bukkit.configuration.file.FileConfiguration;
+import de.boondocksulfur.christmas.api.GiftOpenEvent;
+import de.boondocksulfur.christmas.api.GiftSpawnEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataType;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
 import de.boondocksulfur.christmas.util.LanguageManager;
@@ -16,6 +19,13 @@ import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 
 import java.util.*;
 
+/**
+ * Spawns gift chests near players and removes them after their lifetime.
+ *
+ * <p>Every gift chest carries a PersistentDataContainer marker, so the plugin can
+ * recognise its own chests after a restart or reload (adoption) and never deletes a
+ * player's chest that happens to stand at a tracked position.
+ */
 public class GiftManager {
 
     private final ChristmasSeason plugin;
@@ -23,54 +33,46 @@ public class GiftManager {
     private final FoliaSchedulerHelper scheduler;
     private final Random random = new Random();
 
-    // FOLIA FIX: Player-basierte Spawn-Timer (Entity Scheduler)
+    /** Per-player spawn timers (entity scheduler). */
     private final Map<UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
 
-    // OPTIMIERUNG: Tracke gespawnte Geschenk-Locations statt alle Chunks zu durchsuchen
-    // FOLIA FIX: ConcurrentHashMap.newKeySet() - add/remove laufen auf Location-Scheduler-Threads
+    /** Positions of live gift chests (mutated from region threads). */
     private final Set<Location> trackedGifts = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    // SAFETY FIX: Lifetime-Tasks tracken, damit stop() sie canceln kann -
-    // verwaiste Tasks (bis 300s) könnten sonst nach /xmas off noch feuern
+    /** Lifetime tasks per chest so cleanup can cancel them. */
     private final Map<Location, WrappedTask> giftLifetimeTasks = new java.util.concurrent.ConcurrentHashMap<>();
 
-    // SAFETY FIX: PDC-Marker identifiziert UNSERE Kisten eindeutig - der Lifetime-
-    // Task darf niemals eine Spielerkiste löschen, die an derselben Position steht
-    private final org.bukkit.NamespacedKey giftChestKey;
+    private final NamespacedKey giftChestKey;
+    private final NamespacedKey giftOpenedKey;
 
     public GiftManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
         this.scheduler = plugin.getFoliaScheduler();
-        this.giftChestKey = new org.bukkit.NamespacedKey(plugin, "gift-chest");
+        this.giftChestKey = new NamespacedKey(plugin, "gift-chest");
+        this.giftOpenedKey = new NamespacedKey(plugin, "gift-opened");
     }
 
+    // -------------------------------------------------------------- lifecycle
+
+    /** Starts the manager (spawn timers are per player, see {@link #startPlayerSpawning}). */
     public void start() {
         stop();
-        // FOLIA FIX: Spawn-Timer sind jetzt Player-basiert (siehe startPlayerSpawning)
-        plugin.debug("GiftManager gestartet (Folia-kompatibel: Player-basierte Spawns)");
+        plugin.debug("GiftManager started (per-player spawns)");
     }
 
+    /**
+     * Stops the spawn timers. Existing chests, their tracking and their lifetime
+     * tasks are kept so that {@code /xmas reload} does not orphan them.
+     */
     public void stop() {
-        // FOLIA FIX: Stoppe alle Player-basierten Tasks
         for (WrappedTask task : playerSpawnTasks.values()) {
             if (task != null) task.cancel();
         }
         playerSpawnTasks.clear();
-
-        // SAFETY FIX: Lifetime-Tasks canceln - dürfen nach stop() nicht mehr feuern
-        for (WrappedTask task : giftLifetimeTasks.values()) {
-            if (task != null) task.cancel();
-        }
-        giftLifetimeTasks.clear();
-
-        trackedGifts.clear();
     }
 
-    /**
-     * Startet Geschenk-Spawning für einen Spieler (Entity Scheduler)
-     * FOLIA-KOMPATIBEL: Läuft auf Entity Scheduler des Players
-     */
+    /** Starts gift spawning for a player on the player's entity scheduler. */
     public void startPlayerSpawning(Player player) {
         if (!plugin.getConfig().getBoolean("gifts.enabled", true)) return;
 
@@ -78,9 +80,7 @@ public class GiftManager {
         WrappedTask oldTask = playerSpawnTasks.remove(uuid);
         if (oldTask != null) oldTask.cancel();
 
-        int interval = plugin.getConfig().getInt("gifts.globalIntervalSeconds", 160);
-        // FOLIA FIX: Bei Player-basiertem Spawning Chance auf 1.0 für zuverlässiges Timing
-        // (Bei globalem Timer mit mehreren Spielern war die Chance sinnvoll, jetzt nicht mehr)
+        int interval = Math.max(5, plugin.getConfig().getInt("gifts.globalIntervalSeconds", 160));
         double chance = plugin.getConfig().getDouble("gifts.chancePerInterval", 1.0);
 
         WrappedTask task = scheduler.runForEntityTimer(player, () -> {
@@ -91,166 +91,255 @@ public class GiftManager {
             if (random.nextDouble() <= chance) {
                 spawnGiftNearPlayer(player);
             }
-        }, 80L, interval * 20L);
+        }, () -> playerSpawnTasks.remove(uuid), 80L, interval * 20L);
 
         if (task != null) {
             playerSpawnTasks.put(uuid, task);
-            plugin.debug("Geschenk-Spawning gestartet für " + player.getName());
+            plugin.debug("Gift spawning started for " + player.getName());
         }
     }
 
-    /**
-     * Stoppt Geschenk-Spawning für einen Spieler
-     */
+    /** Stops gift spawning for a player. */
     public void stopPlayerSpawning(Player player) {
         WrappedTask task = playerSpawnTasks.remove(player.getUniqueId());
         if (task != null) {
             task.cancel();
-            plugin.debug("Geschenk-Spawning gestoppt für " + player.getName());
+            plugin.debug("Gift spawning stopped for " + player.getName());
         }
     }
 
-    /**
-     * Prüft, ob an dieser Position eine getrackte Geschenk-Kiste steht.
-     * Wird vom GiftProtectionListener genutzt (Hopper-/Explosionsschutz).
-     */
+    // --------------------------------------------------------------- tracking
+
+    /** @return number of live gift chests */
+    public int getTrackedCount() {
+        return trackedGifts.size();
+    }
+
+    /** @return {@code true} if a tracked gift chest stands at this position (used by the protection listener) */
     public boolean isGiftChest(Location loc) {
         return loc != null && trackedGifts.contains(loc);
     }
 
-    /** Entfernt alle Geschenk-Chests aus der Welt */
+    /** @return {@code true} if the block state is one of our chests (marker check) */
+    public boolean isMarkedGiftChest(BlockState state) {
+        return state instanceof Chest c
+                && c.getPersistentDataContainer().has(giftChestKey, PersistentDataType.BYTE);
+    }
+
+    /**
+     * Adopts a marked chest found in a freshly loaded chunk or after a restart:
+     * tracks it and (re)starts its lifetime timer. Must run on the chunk's thread.
+     */
+    public void adopt(Chest chest) {
+        Location loc = chest.getLocation();
+        if (trackedGifts.contains(loc)) return;
+        trackedGifts.add(loc);
+        scheduleLifetime(loc);
+        plugin.debug("Adopted gift chest at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
+    }
+
+    /** Scans all loaded chunks of the snow worlds for marked chests and adopts them. */
+    public void adoptLoaded() {
+        for (World w : plugin.getSnowWorlds()) {
+            scheduler.forEachLoadedChunk(w, this::adoptInChunk);
+        }
+    }
+
+    /** Adopts every marked chest in a chunk; must run on the chunk's thread. */
+    public void adoptInChunk(Chunk chunk) {
+        for (BlockState state : chunk.getTileEntities(false)) {
+            if (isMarkedGiftChest(state)) {
+                adopt((Chest) state);
+            }
+        }
+    }
+
+    /** Removes every marked chest in a chunk (event inactive); must run on the chunk's thread. */
+    public void removeInChunk(Chunk chunk) {
+        for (BlockState state : chunk.getTileEntities(false)) {
+            if (isMarkedGiftChest(state)) {
+                Location loc = state.getLocation();
+                trackedGifts.remove(loc);
+                WrappedTask lt = giftLifetimeTasks.remove(loc);
+                if (lt != null) lt.cancel();
+                loc.getBlock().setType(Material.AIR);
+                plugin.debug("Removed orphaned gift chest at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
+            }
+        }
+    }
+
+    /**
+     * Removes all gift chests ({@code /xmas off}): tracked ones plus any marked chest in a
+     * loaded chunk that was never tracked (e.g. placed before a restart).
+     */
     public void cleanup() {
         int removed = 0;
 
-        // OPTIMIERT: Verwende Tracking-System statt alle Chunks zu durchsuchen!
-        // FOLIA FIX: Cleanup über Location Scheduler für Block-Operationen
         Iterator<Location> it = trackedGifts.iterator();
         while (it.hasNext()) {
             Location loc = it.next();
-
-            // SAFETY FIX: Zugehörigen Lifetime-Task canceln
             WrappedTask lt = giftLifetimeTasks.remove(loc);
             if (lt != null) lt.cancel();
 
-            scheduler.runAtLocation(loc, () -> {
-                Block block = loc.getBlock();
-                // SAFETY FIX: PDC-Marker prüfen - nur UNSERE Kisten löschen
-                if (block.getType() == Material.CHEST
-                        && block.getState() instanceof Chest c
-                        && c.getPersistentDataContainer().has(giftChestKey, org.bukkit.persistence.PersistentDataType.BYTE)) {
-                    block.setType(Material.AIR);
-                }
-            });
+            scheduler.runAtLocation(loc, () -> removeIfMarked(loc));
             removed++;
             it.remove();
         }
 
-        plugin.getLogger().info(lang.getMessage("log.cleanup.gifts", removed));
+        for (World w : plugin.getSnowWorlds()) {
+            scheduler.forEachLoadedChunk(w, this::removeInChunk);
+        }
+
+        lang.logInfo("log.cleanup.gifts", removed);
     }
 
-    /**
-     * Spawnt Geschenk in Nähe eines Spielers
-     * FOLIA-KOMPATIBEL: Wird von Entity Scheduler des Players aufgerufen
-     */
+    /** Removes the block at {@code loc} if it is still one of our chests; must run on its thread. */
+    private void removeIfMarked(Location loc) {
+        Block block = loc.getBlock();
+        if (block.getType() == Material.CHEST && isMarkedGiftChest(block.getState())) {
+            try { block.setType(Material.AIR, false); } catch (Throwable ignored) { block.setType(Material.AIR); }
+        }
+    }
+
+    // --------------------------------------------------------------- spawning
+
+    /** Picks a safe spot near the player and spawns a gift there (on the region thread). */
     private void spawnGiftNearPlayer(Player player) {
         World w = player.getWorld();
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
-        if (!w.getName().equals(worldName)) return;
+        if (!plugin.isSnowWorld(w)) return;
 
-        // FOLIA FIX: Spawne auf Location Scheduler (für findSurface und Block-Operationen)
         Location playerLoc = player.getLocation();
-
         scheduler.runAtLocation(playerLoc, () -> {
-            // Safe-Spawn: 5 Versuche (Performance-optimiert, strenge Wasser/Wand-Checks)
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 8, 5);
-
-            // Region-Schutz: Kein Spawn in geschützten Bereichen (WorldGuard/GriefPrevention)
+            if (loc == null) {
+                plugin.debug("No safe gift spot near " + player.getName());
+                return;
+            }
             if (plugin.getRegionIntegration() != null && !plugin.getRegionIntegration().canSpawnAt(loc)) {
                 plugin.debug("Gift spawn blocked by region protection at " + loc.getBlockX() + "," + loc.getBlockZ());
                 return;
             }
-
             spawnGift(w, loc);
         });
     }
 
-    public void spawnGift(World w, Location loc) {
+    /**
+     * Places a gift chest at the location. Must run on the location's thread.
+     *
+     * @return {@code true} if a chest was placed
+     */
+    public boolean spawnGift(World w, Location loc) {
         Block b = loc.getBlock();
-        try { b.setType(Material.AIR, false); } catch (Throwable ignored) { b.setType(Material.AIR); }
+
+        // Never merge with a player's chest into a double chest
+        for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST}) {
+            Material neighbour = b.getRelative(face).getType();
+            if (neighbour == Material.CHEST || neighbour == Material.TRAPPED_CHEST) {
+                plugin.debug("Gift spawn skipped: chest next to " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
+                return false;
+            }
+        }
+
+        GiftSpawnEvent event = new GiftSpawnEvent(b.getLocation());
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) return false;
+
         try { b.setType(Material.CHEST, false); } catch (Throwable ignored) { b.setType(Material.CHEST); }
 
         BlockState state = b.getState();
-        if (!(state instanceof Chest)) return;
-        Chest chest = (Chest) state;
+        if (!(state instanceof Chest chest)) return false;
 
         chest.customName(lang.getComponent("entity.gift-chest"));
-        // SAFETY FIX: PDC-Marker setzen, damit der Lifetime-Task sicher erkennen
-        // kann, ob an der Position noch UNSERE Kiste steht (nicht eine vom Spieler)
-        chest.getPersistentDataContainer().set(giftChestKey,
-                org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+        chest.getPersistentDataContainer().set(giftChestKey, PersistentDataType.BYTE, (byte) 1);
         chest.update();
 
         fillGiftInventory(chest.getBlockInventory());
 
-        // OPTIMIERUNG: Tracke die Location für effizientes Cleanup
         Location chestLoc = b.getLocation();
         trackedGifts.add(chestLoc);
-
-        int lifetime = plugin.getConfig().getInt("gifts.lifetimeSeconds", 300);
-        WrappedTask lifetimeTask = scheduler.runAtLocationLater(chestLoc, () -> {
-            giftLifetimeTasks.remove(chestLoc);
-            // LEAK FIX: Immer aus Tracking entfernen - auch wenn die Kiste
-            // inzwischen von Spielern abgebaut wurde (sonst wächst das Set endlos)
-            trackedGifts.remove(chestLoc);
-
-            // SAFETY FIX: Nur löschen, wenn dort wirklich noch UNSERE Kiste steht
-            // (PDC-Marker) - niemals eine Spielerkiste an derselben Position!
-            Block current = chestLoc.getBlock();
-            if (current.getType() == Material.CHEST
-                    && current.getState() instanceof Chest c
-                    && c.getPersistentDataContainer().has(giftChestKey, org.bukkit.persistence.PersistentDataType.BYTE)) {
-                try { current.setType(Material.AIR, false); } catch (Throwable ignored) { current.setType(Material.AIR); }
-            }
-        }, lifetime * 20L);
-        if (lifetimeTask != null) {
-            giftLifetimeTasks.put(chestLoc, lifetimeTask);
-        }
+        scheduleLifetime(chestLoc);
 
         if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true)) {
             Bukkit.broadcast(lang.getComponent("broadcast.gift-spawned",
                     w.getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
         }
+        org.bukkit.Sound sound = plugin.resolveSound(plugin.getConfig().getString("gifts.effects.spawnSound", "block.bell.use"));
+        if (sound != null) w.playSound(chestLoc, sound, 1f, 1f);
+        if (plugin.getConfig().getBoolean("gifts.effects.spawnParticles", true)) {
+            w.spawnParticle(org.bukkit.Particle.SNOWFLAKE, chestLoc.clone().add(0.5, 1.0, 0.5), 25, 0.4, 0.4, 0.4, 0.01);
+        }
+        return true;
     }
 
-    private void fillGiftInventory(Inventory inv) {
-        FileConfiguration cfg = plugin.getConfig();
-        List<String> common = cfg.getStringList("gifts.lootTables.common");
-        List<String> extra  = cfg.getStringList("gifts.lootTables.extra");
-        List<String> rare   = cfg.getStringList("gifts.lootTables.rare");
+    /**
+     * Called by the open listener. The first player to open a chest gets counted,
+     * effects play and {@link GiftOpenEvent} is fired. Must run on the chest's thread.
+     */
+    public void onFirstOpen(Player player, Chest chest) {
+        if (chest.getPersistentDataContainer().has(giftOpenedKey, PersistentDataType.BYTE)) return;
+        chest.getPersistentDataContainer().set(giftOpenedKey, PersistentDataType.BYTE, (byte) 1);
+        chest.update();
 
-        int base = 4 + random.nextInt(4);
-        for (int i = 0; i < base; i++) add(inv, common);
-        int deco = 1 + random.nextInt(3);
-        for (int i = 0; i < deco; i++) add(inv, extra);
+        plugin.getStatsManager().incrementGiftsOpened(player.getUniqueId(), player.getName());
+        Bukkit.getPluginManager().callEvent(new GiftOpenEvent(player, chest.getLocation()));
+
+        Location loc = chest.getLocation();
+        org.bukkit.Sound sound = plugin.resolveSound(plugin.getConfig().getString("gifts.effects.openSound", "entity.player.levelup"));
+        if (sound != null) loc.getWorld().playSound(loc, sound, 1f, 1.3f);
+        if (plugin.getConfig().getBoolean("gifts.effects.openParticles", true)) {
+            loc.getWorld().spawnParticle(org.bukkit.Particle.HAPPY_VILLAGER, loc.clone().add(0.5, 1.2, 0.5), 20, 0.4, 0.4, 0.4, 0.0);
+        }
+        if (plugin.getConfig().getBoolean("gifts.broadcastOnOpen", false)) {
+            Bukkit.broadcast(lang.getComponent("broadcast.gift-opened", player.getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
+        } else {
+            lang.send(player, "gift.opened", plugin.getStatsManager().getGiftsOpened(player.getUniqueId()));
+        }
+    }
+
+    /** Schedules removal of the chest after {@code gifts.lifetimeSeconds}. */
+    private void scheduleLifetime(Location chestLoc) {
+        WrappedTask old = giftLifetimeTasks.remove(chestLoc);
+        if (old != null) old.cancel();
+
+        int lifetime = Math.max(10, plugin.getConfig().getInt("gifts.lifetimeSeconds", 300));
+        WrappedTask lifetimeTask = scheduler.runAtLocationLater(chestLoc, () -> {
+            giftLifetimeTasks.remove(chestLoc);
+            // Always untrack, even if players already broke the chest (otherwise the set grows forever)
+            trackedGifts.remove(chestLoc);
+            removeIfMarked(chestLoc);
+        }, lifetime * 20L);
+        if (lifetimeTask != null) {
+            giftLifetimeTasks.put(chestLoc, lifetimeTask);
+        }
+    }
+
+    /**
+     * Fills the chest from the three loot tables. Counts and rare chances come from
+     * {@code gifts.contents.*}; every table entry may use the extended format (see LootManager).
+     */
+    private void fillGiftInventory(Inventory inv) {
+        LootManager loot = plugin.getLootManager();
+        List<LootManager.LootEntry> common = loot.getList("gifts.lootTables.common");
+        List<LootManager.LootEntry> extra  = loot.getList("gifts.lootTables.extra");
+        List<LootManager.LootEntry> rare   = loot.getList("gifts.lootTables.rare");
+
+        int base = LootManager.randomInRange(plugin.getConfig().getString("gifts.contents.commonItems"), 4, 7);
+        for (int i = 0; i < base; i++) add(inv, loot, common);
+        int deco = LootManager.randomInRange(plugin.getConfig().getString("gifts.contents.extraItems"), 1, 3);
+        for (int i = 0; i < deco; i++) add(inv, loot, extra);
         int rares = 0;
         if (!rare.isEmpty()) {
-            if (random.nextDouble() < 0.6) rares = 1;
-            if (random.nextDouble() < 0.25) rares = 2;
+            if (random.nextDouble() < plugin.getConfig().getDouble("gifts.contents.rareChance", 0.6)) rares = 1;
+            if (random.nextDouble() < plugin.getConfig().getDouble("gifts.contents.secondRareChance", 0.25)) rares = 2;
         }
-        for (int i = 0; i < rares; i++) add(inv, rare);
+        for (int i = 0; i < rares; i++) add(inv, loot, rare);
     }
 
-    private void add(Inventory inv, List<String> list) {
-        if (list == null || list.isEmpty()) return;
-        String entry = list.get(random.nextInt(list.size()));
-        String[] split = entry.split(":");
-        String matName = split[0];
-        int amount = 1;
-        if (split.length > 1) {
-            try { amount = Integer.parseInt(split[1]); } catch (NumberFormatException ignored) {}
-        }
-        Material m = Material.matchMaterial(matName);
-        if (m == null) return;
-        inv.addItem(new ItemStack(m, amount));
+    /** Adds one weighted random entry of the list to the inventory. */
+    private void add(Inventory inv, LootManager loot, List<LootManager.LootEntry> list) {
+        LootManager.LootEntry entry = loot.pick(list);
+        if (entry == null) return;
+        ItemStack stack = loot.build(entry);
+        if (stack != null) inv.addItem(stack);
     }
 }
