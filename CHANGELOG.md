@@ -2,6 +2,14 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.4.1] - 2026-10-12
+
+### Fixed
+- **Paper/Purpur:** biome conversion now runs nearest chunk first and spread over the ticks, like on Folia.
+
+### Changed
+- **Faster defaults:** `tickIntervalTicks` 40 → 10, `perTickBudget` 12 → 8 (16 instead of 6 chunks/s); existing configs keep their values.
+
 ## [2.4.0] - 2026-09-23
 
 **Reliability and feature release:** major backup and biome-safety fixes, thread-safe biome tools, restart-safe tracking, a full English language pass, and several long-requested features.

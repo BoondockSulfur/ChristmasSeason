@@ -27,8 +27,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>Threading model:
  * <ul>
- *   <li>Paper/Purpur: one global timer collects chunks around players into a queue
- *       and processes {@code perTickBudget} of them per run.</li>
+ *   <li>Paper/Purpur: one global timer collects chunks around players into per-player
+ *       pending sets every interval and works off {@code perTickBudget} chunks per
+ *       interval, spread evenly over its ticks, nearest first, players in turn.</li>
  *   <li>Folia: one entity-scheduler timer per player schedules up to
  *       {@code perTickBudget} chunks per run onto their owning regions.</li>
  * </ul>
@@ -62,17 +63,11 @@ public class BiomeSnowManager {
     private final Map<UUID, WrappedTask> playerBubbleTasks = new ConcurrentHashMap<>();
     private WrappedTask globalBubbleTask; // Paper/Purpur only
 
-    /** Folia: chunks seen around a player that are still waiting for their turn (survive fast movement). */
+    /** Chunks seen around a player that are still waiting for their turn (survive fast movement). */
     private final Map<UUID, Set<ChunkKey>> playerPendingChunks = new ConcurrentHashMap<>();
 
-    /** Paper/Purpur: chunks waiting to be processed by the global timer. */
-    private final Queue<ChunkCoords> chunkProcessQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-
-    private static class ChunkCoords {
-        final World world;
-        final int x, z;
-        ChunkCoords(World w, int x, int z) { this.world = w; this.x = x; this.z = z; }
-    }
+    /** Paper/Purpur: rotating start index so every player gets chunks in turn. */
+    private int paperPlayerTurn;
 
     private static final class ChunkKey {
         final String world; final int x; final int z;
@@ -166,7 +161,6 @@ public class BiomeSnowManager {
         playerBubbleTasks.clear();
         playerPendingChunks.clear();
 
-        chunkProcessQueue.clear();
         processedChunks.clear();
         manualChunks.clear();
         knownSnapshotChunks.clear();
@@ -184,24 +178,39 @@ public class BiomeSnowManager {
 
     // ---------------------------------------------------------- bubble tasks
 
-    /** Paper/Purpur: one global timer feeds the chunk queue and processes a budget per run. */
+    /**
+     * Paper/Purpur: one global timer, running every tick. Every {@code tickIntervalTicks}
+     * it collects the chunks around each player; in between it works off
+     * {@code perTickBudget} chunks per interval, spread evenly over the ticks, so the main
+     * thread never converts a whole batch in a single tick.
+     */
     private void startGlobalBubbleTask() {
         if (!plugin.getConfig().getBoolean("biome.playerBubble.enabled", true)) return;
 
-        int period = Math.max(5, plugin.getConfig().getInt("biome.playerBubble.tickIntervalTicks", 40));
+        final int period = Math.max(5, plugin.getConfig().getInt("biome.playerBubble.tickIntervalTicks", 10));
+        final int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 8));
+        final double creditPerTick = (double) budget / period;
+        final int[] tick = {0};
+        final double[] credit = {0.0};
 
         globalBubbleTask = scheduler.runGlobalTaskTimer(() -> {
-            for (World w : plugin.getSnowWorlds()) {
-                for (Player p : w.getPlayers()) {
-                    if (p.isOnline() && p.isValid()) {
-                        queueChunksAroundPlayer(p, w);
+            if (tick[0]++ % period == 0) {
+                for (World w : plugin.getSnowWorlds()) {
+                    for (Player p : w.getPlayers()) {
+                        if (p.isOnline() && p.isValid()) {
+                            collectAroundPlayer(p, w);
+                        }
                     }
                 }
             }
 
-            int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 12));
-            processChunksFromQueue(budget);
-        }, 40L, period);
+            credit[0] = Math.min(budget, credit[0] + creditPerTick);
+            int allowed = (int) credit[0];
+            if (allowed == 0) return;
+            int processed = processPendingChunks(allowed);
+            // Nothing left to do: do not save up credit for a burst later
+            credit[0] = processed < allowed ? 0.0 : credit[0] - processed;
+        }, 40L, 1L);
     }
 
     /**
@@ -217,7 +226,7 @@ public class BiomeSnowManager {
         WrappedTask oldTask = playerBubbleTasks.remove(uuid);
         if (oldTask != null) oldTask.cancel();
 
-        int period = Math.max(5, plugin.getConfig().getInt("biome.playerBubble.tickIntervalTicks", 40));
+        int period = Math.max(5, plugin.getConfig().getInt("biome.playerBubble.tickIntervalTicks", 10));
         WrappedTask task = scheduler.runForEntityTimer(player, () -> {
             if (!player.isOnline() || !player.isValid()) {
                 stopPlayerTracking(player);
@@ -243,7 +252,8 @@ public class BiomeSnowManager {
     }
 
     /**
-     * Called from {@code ChunkLoadEvent}. Only chunks near a player are queued so that
+     * Called from {@code ChunkLoadEvent}. Only chunks near a player are added to that
+     * player's pending set so that
      * pre-generation, spawn chunks and other plugins loading far-away chunks neither
      * bloat the snapshot database nor bypass the per-tick budget.
      *
@@ -264,7 +274,7 @@ public class BiomeSnowManager {
             Location loc = p.getLocation();
             if (Math.abs((loc.getBlockX() >> 4) - chunk.getX()) <= r
                     && Math.abs((loc.getBlockZ() >> 4) - chunk.getZ()) <= r) {
-                chunkProcessQueue.offer(new ChunkCoords(w, chunk.getX(), chunk.getZ()));
+                playerPendingChunks.computeIfAbsent(p.getUniqueId(), k -> ConcurrentHashMap.newKeySet()).add(key);
                 return;
             }
         }
@@ -302,7 +312,7 @@ public class BiomeSnowManager {
         processedChunks.clear();
         manualChunks.clear();
         knownSnapshotChunks.clear();
-        chunkProcessQueue.clear();
+        playerPendingChunks.clear();
         chunkRetryCount.clear();
 
         final BiomeSnapshotDatabase database = db;
@@ -358,7 +368,7 @@ public class BiomeSnowManager {
                 processedChunks.clear();
                 manualChunks.clear();
                 knownSnapshotChunks.clear();
-                chunkProcessQueue.clear();
+                playerPendingChunks.clear();
                 chunkRetryCount.clear();
 
                 // Successfully restored chunks were deleted individually; failed ones stay
@@ -709,21 +719,12 @@ public class BiomeSnowManager {
             return;
         }
 
-        int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 2));
-        int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 12));
+        int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 8));
         Location loc = p.getLocation();
         int baseCX = loc.getBlockX() >> 4;
         int baseCZ = loc.getBlockZ() >> 4;
 
-        Set<ChunkKey> pending = playerPendingChunks.computeIfAbsent(p.getUniqueId(), k -> ConcurrentHashMap.newKeySet());
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dz = -r; dz <= r; dz++) {
-                ChunkKey key = new ChunkKey(w.getName(), baseCX + dx, baseCZ + dz);
-                if (!processedChunks.contains(key) && !manualChunks.contains(key)) {
-                    pending.add(key);
-                }
-            }
-        }
+        Set<ChunkKey> pending = collectAroundPlayer(p, w);
 
         // Nearest chunks first so the area around the player closes before the trail behind
         List<ChunkKey> ordered = new ArrayList<>(pending);
@@ -748,44 +749,82 @@ public class BiomeSnowManager {
         }
     }
 
-    /** Paper/Purpur: queues the unprocessed loaded chunks around a player. */
-    private void queueChunksAroundPlayer(Player p, World w) {
+    /**
+     * Adds the unprocessed chunks in the radius around a player to their pending set.
+     * A set, so revisiting the same area never queues a chunk twice.
+     *
+     * @return the player's pending set
+     */
+    private Set<ChunkKey> collectAroundPlayer(Player p, World w) {
         int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 2));
         Location loc = p.getLocation();
         int baseCX = loc.getBlockX() >> 4;
         int baseCZ = loc.getBlockZ() >> 4;
 
+        Set<ChunkKey> pending = playerPendingChunks.computeIfAbsent(p.getUniqueId(), k -> ConcurrentHashMap.newKeySet());
         for (int dx = -r; dx <= r; dx++) {
             for (int dz = -r; dz <= r; dz++) {
-                int chunkX = baseCX + dx;
-                int chunkZ = baseCZ + dz;
-                ChunkKey key = new ChunkKey(w.getName(), chunkX, chunkZ);
-                if (processedChunks.contains(key) || manualChunks.contains(key)) continue;
-                if (w.isChunkLoaded(chunkX, chunkZ)) {
-                    chunkProcessQueue.offer(new ChunkCoords(w, chunkX, chunkZ));
+                ChunkKey key = new ChunkKey(w.getName(), baseCX + dx, baseCZ + dz);
+                if (!processedChunks.contains(key) && !manualChunks.contains(key)) {
+                    pending.add(key);
                 }
             }
         }
+        return pending;
     }
 
-    /** Paper/Purpur: processes up to {@code budget} queued chunks. */
-    private void processChunksFromQueue(int budget) {
-        int processed = 0;
-        while (processed < budget && !chunkProcessQueue.isEmpty()) {
-            ChunkCoords coords = chunkProcessQueue.poll();
-            if (coords == null) break;
+    /**
+     * Paper/Purpur: converts up to {@code allowed} pending chunks on the main thread.
+     * Players take turns, each turn takes the chunk nearest to that player. Chunks that
+     * are no longer loaded are dropped; they come back via the next collection or
+     * {@link #onChunkLoad} once a player is near again.
+     *
+     * @return number of chunks actually converted
+     */
+    private int processPendingChunks(int allowed) {
+        List<Player> players = new ArrayList<>();
+        for (World w : plugin.getSnowWorlds()) players.addAll(w.getPlayers());
+        if (players.isEmpty()) return 0;
 
-            ChunkKey key = new ChunkKey(coords.world.getName(), coords.x, coords.z);
-            if (processedChunks.contains(key) || manualChunks.contains(key)) continue;
-            if (coords.world.isChunkLoaded(coords.x, coords.z)) {
-                processChunkAt(coords.world, coords.x, coords.z);
-                processed++;
+        int processed = 0;
+        int emptyTurns = 0;
+        while (processed < allowed && emptyTurns < players.size()) {
+            Player p = players.get(Math.floorMod(paperPlayerTurn++, players.size()));
+            ChunkKey key = pollNearest(p);
+            if (key == null) {
+                emptyTurns++;
+                continue;
+            }
+            emptyTurns = 0;
+
+            World w = p.getWorld();
+            if (!key.world.equals(w.getName()) || processedChunks.contains(key) || manualChunks.contains(key)) continue;
+            if (!w.isChunkLoaded(key.x, key.z)) continue;
+            processChunkAt(w, key.x, key.z);
+            processed++;
+        }
+        return processed;
+    }
+
+    /** Removes and returns the pending chunk nearest to the player, or {@code null} if none is left. */
+    private ChunkKey pollNearest(Player p) {
+        Set<ChunkKey> pending = playerPendingChunks.get(p.getUniqueId());
+        if (pending == null || pending.isEmpty()) return null;
+
+        Location loc = p.getLocation();
+        int baseCX = loc.getBlockX() >> 4;
+        int baseCZ = loc.getBlockZ() >> 4;
+        ChunkKey nearest = null;
+        int best = Integer.MAX_VALUE;
+        for (ChunkKey k : pending) {
+            int d = (k.x - baseCX) * (k.x - baseCX) + (k.z - baseCZ) * (k.z - baseCZ);
+            if (d < best) {
+                best = d;
+                nearest = k;
             }
         }
-
-        if (plugin.isDebugMode() && chunkProcessQueue.size() > 50) {
-            plugin.debug("Chunk queue: " + chunkProcessQueue.size() + " chunks waiting");
-        }
+        if (nearest != null) pending.remove(nearest);
+        return nearest;
     }
 
     /**
@@ -928,7 +967,7 @@ public class BiomeSnowManager {
         convertTotal = coords.size();
         convertScheduled = 0;
         convertDone = 0;
-        final int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 12));
+        final int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 8));
         final AtomicInteger done = new AtomicInteger();
         final long start = System.currentTimeMillis();
 

@@ -40,8 +40,8 @@ biome:
     enabled: true
     radiusChunks: 2         # radius in chunks (2 = 5x5 = 25 chunks around each player)
     refreshClient: true     # resend chunks so clients see the new biome immediately
-    tickIntervalTicks: 40   # how often the bubble runs (40 = every 2 seconds)
-    perTickBudget: 12       # max chunks per run (12 = fast, 6 = smooth, 3 = safe on a struggling server)
+    tickIntervalTicks: 10   # how often chunks around players are collected (10 = every 0.5 seconds)
+    perTickBudget: 8        # max chunks per interval, spread over its ticks on Paper (8 every 10 ticks = 16 chunks/s, about 1-2 ms per tick)
 
   # Leave these areas untouched by the biome bubble (lobbies, build areas, ...)
   exclude:

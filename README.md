@@ -71,7 +71,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.4.0.jar`
+1. **Download:** Get `ChristmasSeason-2.4.1.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
@@ -146,8 +146,8 @@ biome:
     enabled: true
     radiusChunks: 2         # 5x5 chunks around player
     refreshClient: true     # Immediate client updates
-    tickIntervalTicks: 40   # Every 2 seconds
-    perTickBudget: 12       # 12 chunks per tick (fast!)
+    tickIntervalTicks: 10   # Every 0.5 seconds
+    perTickBudget: 8        # 8 chunks per interval (16 chunks/s)
 
   exclude:
     areas: []               # - {world: world, x1: -100, z1: -100, x2: 100, z2: 100}
@@ -250,17 +250,19 @@ updateChecker:
 
 ### For Paper/Purpur:
 
+Chunks are spread evenly over the interval; one chunk costs about 2 ms on the main thread.
+
 **Standard (recommended):**
-- `perTickBudget: 12` - Fast updates without lag
-- `tickIntervalTicks: 40` - Every 2 seconds
+- `perTickBudget: 8` - 16 chunks per second, keeps up with flying players
+- `tickIntervalTicks: 10` - New chunks are picked up every 0.5 seconds
 
 **Weak Servers:**
-- `perTickBudget: 6` - Safer with TPS issues
-- `tickIntervalTicks: 60` - Every 3 seconds
+- `perTickBudget: 4` - 4 chunks per second, safer with TPS issues
+- `tickIntervalTicks: 20` - Every second
 
 **Strong Servers:**
-- `perTickBudget: 25` - Instant updates
-- `tickIntervalTicks: 20` - Every second
+- `perTickBudget: 12` - 24 chunks per second
+- `tickIntervalTicks: 10` - Every 0.5 seconds
 
 ### For Folia:
 
