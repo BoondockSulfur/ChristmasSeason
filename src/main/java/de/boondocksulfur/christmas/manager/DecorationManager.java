@@ -111,18 +111,7 @@ public class DecorationManager {
         return trackedDecorations.size();
     }
 
-    /** Scans all loaded chunks of the snow worlds for decoration items and adopts them. */
-    public void adoptLoaded() {
-        for (World w : plugin.getSnowWorlds()) {
-            scheduler.forEachLoadedChunk(w, chunk -> {
-                for (Entity e : chunk.getEntities()) {
-                    if (isDecoration(e)) adopt((Item) e);
-                }
-            });
-        }
-    }
-
-    /** Removes all decoration items ({@code /xmas off}): tracked ones plus untracked ones in loaded chunks. */
+    /** Removes all tracked decoration items ({@code /xmas off}); untracked ones are found by {@link LoadedObjectSync}. */
     public void cleanup() {
         int removed = 0;
         int tracked = trackedDecorations.size();
@@ -138,14 +127,6 @@ public class DecorationManager {
                 removed++;
             }
             it.remove();
-        }
-
-        for (World w : plugin.getSnowWorlds()) {
-            scheduler.forEachLoadedChunk(w, chunk -> {
-                for (Entity e : chunk.getEntities()) {
-                    if (isDecoration(e)) e.remove();
-                }
-            });
         }
 
         lang.logInfo("log.cleanup.decorations", removed);

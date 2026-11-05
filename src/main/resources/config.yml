@@ -59,6 +59,7 @@ biome:
   # /xmas biome convert-all: default radius in chunks around the world spawn
   convertAll:
     radiusChunks: 64
+    perTick: 2              # chunks converted per tick (2 = 40 chunks/s)
 
   restore:
     perTick: 4              # chunks per tick during /xmas off (also the concurrency of compare/fix-diff)
@@ -96,7 +97,9 @@ gifts:
   globalIntervalSeconds: 160
   chancePerInterval: 0.35
   lifetimeSeconds: 300
+  maxPerWorld: 40           # gift chests per world at the same time, 0 = no limit
   broadcastOnSpawn: true
+  broadcastMinIntervalSeconds: 10  # at most one spawn announcement in this time, 0 = no limit
   broadcastOnOpen: false    # announce who opened a gift first
   protectChests: true       # protect gift chests from hoppers and explosions
   effects:

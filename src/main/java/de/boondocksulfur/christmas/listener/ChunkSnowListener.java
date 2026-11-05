@@ -19,7 +19,7 @@ public class ChunkSnowListener implements Listener {
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent e) {
         if (!plugin.isActive()) return;
-        if (!e.getWorld().getName().equals(plugin.getConfig().getString("snowWorld", "world"))) return;
+        if (!plugin.isSnowWorld(e.getWorld())) return;
         plugin.getBiomeSnowManager().onChunkLoad(e.getChunk());
     }
 }

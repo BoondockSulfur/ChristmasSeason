@@ -49,13 +49,6 @@ public class BiomeCompare {
             return null;
         }
 
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            lang.logWarning("log.biome.world-not-found", worldName);
-            return null;
-        }
-
         BiomeSnapshotDatabase backupDb = new BiomeSnapshotDatabase(plugin, backupFile);
         try {
             backupDb.open();
@@ -66,8 +59,8 @@ public class BiomeCompare {
             java.util.concurrent.atomic.AtomicInteger compared = new java.util.concurrent.atomic.AtomicInteger();
             java.util.concurrent.atomic.AtomicInteger identical = new java.util.concurrent.atomic.AtomicInteger();
 
-            boolean completed = forEachChunk(backupDb, backupChunks, worldName, (job) -> {
-                ChunkDifference diff = compareChunk(world, job.x, job.z, job.snapshot);
+            boolean completed = forEachChunk(backupDb, backupChunks, (job) -> {
+                ChunkDifference diff = compareChunk(job.world, job.x, job.z, job.snapshot);
                 if (diff.hasDifferences()) {
                     differences.add(diff);
                 } else {
@@ -110,18 +103,11 @@ public class BiomeCompare {
             return 0;
         }
 
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) {
-            lang.logWarning("log.biome.world-not-found", worldName);
-            return -1;
-        }
-
         lang.logInfo("log.compare.fix-start", result.differences.size());
 
         List<BiomeSnapshotDatabase.ChunkCoords> coords = new ArrayList<>();
         for (ChunkDifference diff : result.differences) {
-            coords.add(new BiomeSnapshotDatabase.ChunkCoords(worldName, diff.chunkX, diff.chunkZ));
+            coords.add(new BiomeSnapshotDatabase.ChunkCoords(diff.world, diff.chunkX, diff.chunkZ));
         }
 
         BiomeSnapshotDatabase backupDb = new BiomeSnapshotDatabase(plugin, backupFile);
@@ -130,8 +116,8 @@ public class BiomeCompare {
             java.util.concurrent.atomic.AtomicInteger fixed = new java.util.concurrent.atomic.AtomicInteger();
             int total = coords.size();
 
-            boolean completed = forEachChunk(backupDb, coords, worldName, (job) -> {
-                restoreChunkFromSnapshot(world, job.x, job.z, job.snapshot);
+            boolean completed = forEachChunk(backupDb, coords, (job) -> {
+                restoreChunkFromSnapshot(job.world, job.x, job.z, job.snapshot);
                 int done = fixed.incrementAndGet();
                 if (done % 50 == 0) {
                     lang.logInfo("log.compare.fix-progress", done, total);
@@ -153,46 +139,68 @@ public class BiomeCompare {
 
     /** One chunk handed from the async loader to the region task. */
     private static final class ChunkJob {
+        final World world;
         final int x, z;
         final BiomeSnapshotDatabase.BiomeSnapshot3D snapshot;
-        ChunkJob(int x, int z, BiomeSnapshotDatabase.BiomeSnapshot3D snapshot) { this.x = x; this.z = z; this.snapshot = snapshot; }
+        ChunkJob(World world, int x, int z, BiomeSnapshotDatabase.BiomeSnapshot3D snapshot) {
+            this.world = world; this.x = x; this.z = z; this.snapshot = snapshot;
+        }
     }
 
     /**
      * Loads every chunk snapshot on the calling (async) thread and runs {@code action}
      * for it on the chunk's owning thread, keeping at most {@code perTick} chunks in flight.
      *
-     * @return {@code false} if a region task did not complete in time (plugin disabled, world unloaded)
+     * <p>Chunks of worlds that are not loaded are skipped with one warning per world.
+     *
+     * @return {@code false} if a region task did not complete in time (plugin disabled, world
+     *         unloaded) or none of the chunks belongs to a loaded world
      */
     private boolean forEachChunk(BiomeSnapshotDatabase backupDb,
                                  List<BiomeSnapshotDatabase.ChunkCoords> chunks,
-                                 String worldName,
                                  Consumer<ChunkJob> action) throws SQLException {
         int concurrency = Math.max(1, plugin.getConfig().getInt("biome.restore.perTick", 4));
         Semaphore inFlight = new Semaphore(concurrency);
-        World world = Bukkit.getWorld(worldName);
-        if (world == null) return false;
+        Set<String> missingWorlds = new HashSet<>();
+        boolean anyWorldLoaded = chunks.isEmpty();
 
         for (BiomeSnapshotDatabase.ChunkCoords coords : chunks) {
-            if (!coords.world.equals(worldName)) continue;
+            World world = Bukkit.getWorld(coords.world);
+            if (world == null) {
+                if (missingWorlds.add(coords.world)) lang.logWarning("log.biome.world-not-found", coords.world);
+                continue;
+            }
+            anyWorldLoaded = true;
 
             BiomeSnapshotDatabase.BiomeSnapshot3D snapshot = backupDb.loadChunk3D(coords.world, coords.x, coords.z);
             if (snapshot == null) continue;
 
             if (!acquire(inFlight)) return false;
 
-            ChunkJob job = new ChunkJob(coords.x, coords.z, snapshot);
+            ChunkJob job = new ChunkJob(world, coords.x, coords.z, snapshot);
+            Runnable onOwner = () -> scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(world, coords.x, coords.z), () -> {
+                try {
+                    action.accept(job);
+                } catch (Exception e) {
+                    lang.logWarning("log.biome.chunk-error", job.x, job.z, e.getMessage());
+                    if (plugin.isDebugMode()) e.printStackTrace();
+                } finally {
+                    inFlight.release();
+                }
+            });
             try {
-                scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(world, coords.x, coords.z), () -> {
-                    try {
-                        action.accept(job);
-                    } catch (Exception e) {
-                        lang.logWarning("log.biome.chunk-error", job.x, job.z, e.getMessage());
-                        if (plugin.isDebugMode()) e.printStackTrace();
-                    } finally {
-                        inFlight.release();
-                    }
-                });
+                if (world.isChunkLoaded(coords.x, coords.z)) {
+                    onOwner.run();
+                } else {
+                    world.getChunkAtAsync(coords.x, coords.z, true).whenComplete((chunk, loadError) -> {
+                        try {
+                            onOwner.run();
+                        } catch (Exception schedulingError) {
+                            inFlight.release();
+                            lang.logWarning("log.biome.chunk-error", coords.x, coords.z, schedulingError.getMessage());
+                        }
+                    });
+                }
             } catch (Exception schedulingError) {
                 inFlight.release();
                 lang.logWarning("log.biome.chunk-error", coords.x, coords.z, schedulingError.getMessage());
@@ -204,7 +212,7 @@ public class BiomeCompare {
         for (int i = 0; i < concurrency; i++) {
             if (!acquire(inFlight)) return false;
         }
-        return true;
+        return anyWorldLoaded;
     }
 
     private boolean acquire(Semaphore semaphore) {
@@ -218,9 +226,9 @@ public class BiomeCompare {
         }
     }
 
-    /** Compares one chunk; runs on the chunk's owning thread. Loads the chunk if needed. */
+    /** Compares one chunk; runs on the chunk's owning thread, normally after it was loaded off-thread. */
     private ChunkDifference compareChunk(World world, int chunkX, int chunkZ, BiomeSnapshotDatabase.BiomeSnapshot3D backupSnapshot) {
-        world.getChunkAt(chunkX, chunkZ); // synchronous load on the owning thread
+        world.getChunkAt(chunkX, chunkZ);
         int bx = chunkX << 4;
         int bz = chunkZ << 4;
 
@@ -240,7 +248,7 @@ public class BiomeCompare {
                 }
             }
         }
-        return new ChunkDifference(chunkX, chunkZ, differences, changedBiomes);
+        return new ChunkDifference(world.getName(), chunkX, chunkZ, differences, changedBiomes);
     }
 
     /** Writes the snapshot biomes into the chunk; runs on the chunk's owning thread. */
@@ -270,13 +278,15 @@ public class BiomeCompare {
 
     /** Differences found in one chunk. */
     public static class ChunkDifference {
+        public final String world;
         public final int chunkX;
         public final int chunkZ;
         /** Number of differing 4x4x4 cells. */
         public final int differenceCount;
         public final Map<Biome, Integer> changedBiomes;
 
-        public ChunkDifference(int chunkX, int chunkZ, int differenceCount, Map<Biome, Integer> changedBiomes) {
+        public ChunkDifference(String world, int chunkX, int chunkZ, int differenceCount, Map<Biome, Integer> changedBiomes) {
+            this.world = world;
             this.chunkX = chunkX;
             this.chunkZ = chunkZ;
             this.differenceCount = differenceCount;

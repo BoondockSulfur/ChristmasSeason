@@ -50,7 +50,7 @@ public class BiomeSnowManager {
     private final ChristmasSeason plugin;
     private final LanguageManager lang;
     private final FoliaSchedulerHelper scheduler;
-    private BiomeSnapshotDatabase db;
+    private volatile BiomeSnapshotDatabase db;
 
     public BiomeSnowManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -96,10 +96,24 @@ public class BiomeSnowManager {
     /** Resolved once per start; unknown names fall back to SNOWY_PLAINS with a single warning. */
     private volatile Biome targetBiome = Biome.SNOWY_PLAINS;
 
+    /** The snapshot database should be available but could not be opened: nothing may be converted. */
+    private volatile boolean snapshotUnavailable = false;
+
+    /** Minimum time between two warnings about failed snapshot writes. */
+    private static final long SNAPSHOT_WARNING_INTERVAL_MS = 30_000L;
+    private volatile long lastSnapshotWarning = 0L;
+
+    /** Asynchronous chunk loads kept in flight, as a multiple of the chunks handled per tick. */
+    private static final int LOADS_PER_BUDGET = 8;
+
+    /** Pending chunks further than this beyond the view distance are dropped. */
+    private static final int PENDING_RANGE_MARGIN = 2;
+
     // -------------------------------------------------------------- lifecycle
 
     public void start() {
         stop();
+        snapshotUnavailable = false;
         if (!plugin.isActive()) return;
         if (!plugin.getConfig().getBoolean("biome.enabled", true)) return;
 
@@ -124,6 +138,8 @@ public class BiomeSnowManager {
                 lang.logSevere("log.biome.snapshot-system-disabled");
                 e.printStackTrace();
                 db = null;
+                snapshotUnavailable = true;
+                return;
             }
         } else {
             lang.logInfo("log.biome.system-disabled-config");
@@ -140,6 +156,17 @@ public class BiomeSnowManager {
 
     public void stop() {
         stop(true);
+    }
+
+    /**
+     * @return {@code true} if chunks may be converted right now: event active, biome feature
+     *         enabled, no restore running and, if snapshots are enabled, the database usable
+     */
+    public boolean isConversionAllowed() {
+        return plugin.isActive()
+                && !restoreRunning.get()
+                && !snapshotUnavailable
+                && plugin.getConfig().getBoolean("biome.enabled", true);
     }
 
     /**
@@ -218,7 +245,7 @@ public class BiomeSnowManager {
      * No-op on Paper/Purpur (the global timer covers all players).
      */
     public void startPlayerTracking(Player player) {
-        if (!plugin.isActive()) return;
+        if (!isConversionAllowed()) return;
         if (!plugin.getConfig().getBoolean("biome.playerBubble.enabled", true)) return;
         if (!scheduler.isFolia()) return;
 
@@ -261,7 +288,7 @@ public class BiomeSnowManager {
      * around every player within one interval.
      */
     public void onChunkLoad(Chunk chunk) {
-        if (!plugin.isActive()) return;
+        if (!isConversionAllowed()) return;
         if (scheduler.isFolia()) return;
         if (!plugin.getConfig().getBoolean("biome.playerBubble.enabled", true)) return;
 
@@ -289,23 +316,29 @@ public class BiomeSnowManager {
 
     /**
      * Restores every snapshotted chunk asynchronously in budgeted batches ({@code /xmas off}).
-     * Closes the database once all chunks have been processed.
+     * Closes the database once all chunks have been processed. A closed database is opened
+     * first, so snapshots left by a failed or interrupted restore are picked up again.
      *
-     * @param perTick number of chunks scheduled per tick
+     * @param perTick       number of chunks scheduled per tick
+     * @param beforeRestore runs off the main thread before the first chunk changes (may be {@code null})
      */
-    public void restoreALLAsync(int perTick) {
-        if (db == null) {
-            lang.logWarning("log.biome.restore-error-header");
-            lang.logWarning("log.biome.no-snapshot-available");
-            lang.logWarning("log.biome.snapshot-disabled-or-error");
-            lang.logWarning("log.biome.solution-enable-snapshot");
-            return;
-        }
-
+    public void restoreALLAsync(int perTick, Runnable beforeRestore) {
         // Two parallel restores would delete each other's chunks and close the database twice
         if (!restoreRunning.compareAndSet(false, true)) {
             lang.logWarning("log.biome.restore-already-running");
             return;
+        }
+
+        if (db == null) {
+            db = openExistingDatabase();
+            if (db == null) {
+                restoreRunning.set(false);
+                lang.logWarning("log.biome.restore-error-header");
+                lang.logWarning("log.biome.no-snapshot-available");
+                lang.logWarning("log.biome.snapshot-disabled-or-error");
+                lang.logWarning("log.biome.solution-enable-snapshot");
+                return;
+            }
         }
 
         plugin.debug("Clearing caches before restore");
@@ -318,195 +351,247 @@ public class BiomeSnowManager {
         final BiomeSnapshotDatabase database = db;
 
         try {
-            final List<BiomeSnapshotDatabase.ChunkCoords> allChunks = database.getAllChunkCoordinates();
-            final int totalChunks = allChunks.size();
-            lang.logInfo("log.biome.restore-start-header");
-            lang.logInfo("log.biome.chunks-in-database", totalChunks);
+            scheduler.runAsync(() -> {
+                try {
+                    if (beforeRestore != null) beforeRestore.run();
+                    List<BiomeSnapshotDatabase.ChunkCoords> allChunks = database.getAllChunkCoordinates();
+                    Set<ChunkKey> restoreSet = new HashSet<>();
+                    for (BiomeSnapshotDatabase.ChunkCoords c : allChunks) restoreSet.add(new ChunkKey(c.world, c.x, c.z));
+                    scheduler.runGlobalTask(() -> runRestore(database, allChunks, restoreSet, perTick));
+                } catch (SQLException | RuntimeException e) {
+                    restoreNotStarted(e);
+                }
+            });
+        } catch (RuntimeException e) {
+            restoreNotStarted(e);
+        }
+    }
 
-            if (totalChunks == 0) {
-                lang.logWarning("log.biome.snapshot-empty");
-                lang.logWarning("log.biome.snapshot-timing-question");
-                lang.logInfo("log.biome.separator-line");
-                database.close();
-                if (db == database) db = null;
-                restoreRunning.set(false);
-                return;
+    private void restoreNotStarted(Exception e) {
+        lang.logSevere("log.biome.error-retrieving-data", e.getMessage());
+        e.printStackTrace();
+        restoreRunning.set(false);
+    }
+
+    /** Works off the snapshot list in budgeted batches; runs on the global scheduler. */
+    private void runRestore(BiomeSnapshotDatabase database, List<BiomeSnapshotDatabase.ChunkCoords> allChunks,
+                            Set<ChunkKey> restoreSet, int perTick) {
+        final int totalChunks = allChunks.size();
+        lang.logInfo("log.biome.restore-start-header");
+        lang.logInfo("log.biome.chunks-in-database", totalChunks);
+
+        if (totalChunks == 0) {
+            lang.logWarning("log.biome.snapshot-empty");
+            lang.logWarning("log.biome.snapshot-timing-question");
+            lang.logInfo("log.biome.separator-line");
+            database.close();
+            if (db == database) db = null;
+            restoreRunning.set(false);
+            return;
+        }
+
+        final int budget = Math.max(1, perTick);
+        restoreTotal = totalChunks; restoreFinished = 0; restoreRestored = 0; restoreErrors = 0;
+        lang.logInfo("log.biome.starting-restore", totalChunks);
+        lang.logInfo("log.biome.budget", budget);
+        final long startTime = System.currentTimeMillis();
+
+        // Only touched by the global timer (sequential)
+        final int[] scheduled = {0};
+        // Incremented from region threads
+        final AtomicInteger restored = new AtomicInteger(0);
+        final AtomicInteger errors = new AtomicInteger(0);
+        final AtomicInteger finished = new AtomicInteger(0);
+        final AtomicBoolean completionDone = new AtomicBoolean(false);
+        // Incremented by the global timer, decremented by the chunk load callbacks
+        final AtomicInteger loading = new AtomicInteger(0);
+        final int maxLoading = budget * LOADS_PER_BUDGET;
+
+        // Runs the wrap-up (stats, caches, close) once ALL region tasks have finished
+        final Runnable completionCheck = () -> {
+            restoreFinished = finished.get(); restoreRestored = restored.get(); restoreErrors = errors.get();
+            if (finished.get() < totalChunks) return;
+            if (!completionDone.compareAndSet(false, true)) return;
+
+            long duration = System.currentTimeMillis() - startTime;
+            lang.logInfo("log.biome.restore-complete-header");
+            lang.logInfo("log.biome.processed", totalChunks);
+            lang.logInfo("log.biome.restored-count", restored.get());
+            if (errors.get() > 0) {
+                lang.logInfo("log.biome.error-count", errors.get());
             }
+            lang.logInfo("log.biome.duration", (duration / 1000.0));
+            lang.logInfo("log.biome.separator-footer");
 
-            final int budget = Math.max(1, perTick);
-            restoreTotal = totalChunks; restoreFinished = 0; restoreRestored = 0; restoreErrors = 0;
-            final Set<ChunkKey> restoreSet = new HashSet<>();
-            for (BiomeSnapshotDatabase.ChunkCoords c : allChunks) restoreSet.add(new ChunkKey(c.world, c.x, c.z));
-            lang.logInfo("log.biome.starting-restore", totalChunks);
-            lang.logInfo("log.biome.budget", budget);
-            final long startTime = System.currentTimeMillis();
+            processedChunks.clear();
+            manualChunks.clear();
+            knownSnapshotChunks.clear();
+            playerPendingChunks.clear();
+            chunkRetryCount.clear();
 
-            // Only touched by the global timer (sequential)
-            final int[] scheduled = {0};
-            // Incremented from region threads
-            final AtomicInteger restored = new AtomicInteger(0);
-            final AtomicInteger errors = new AtomicInteger(0);
-            final AtomicInteger finished = new AtomicInteger(0);
-            final AtomicBoolean completionDone = new AtomicBoolean(false);
-
-            // Runs the wrap-up (stats, caches, close) once ALL region tasks have finished
-            final Runnable completionCheck = () -> {
-                restoreFinished = finished.get(); restoreRestored = restored.get(); restoreErrors = errors.get();
-                if (finished.get() < totalChunks) return;
-                if (!completionDone.compareAndSet(false, true)) return;
-
-                long duration = System.currentTimeMillis() - startTime;
-                lang.logInfo("log.biome.restore-complete-header");
-                lang.logInfo("log.biome.processed", totalChunks);
-                lang.logInfo("log.biome.restored-count", restored.get());
+            // Successfully restored chunks were deleted individually; failed ones stay
+            // in the database and are retried on the next '/xmas off'
+            try {
                 if (errors.get() > 0) {
-                    lang.logInfo("log.biome.error-count", errors.get());
+                    lang.logWarning("log.biome.chunks-kept-for-retry", errors.get());
+                } else {
+                    database.clearAll(); // already empty - just compacts the file
                 }
-                lang.logInfo("log.biome.duration", (duration / 1000.0));
-                lang.logInfo("log.biome.separator-footer");
+                database.close();
+                plugin.debug("Database closed after restore");
+                // Only null out 'db' if it is still our instance - '/xmas on' during the
+                // restore may already have opened a new one
+                if (db == database) db = null;
+            } catch (Exception e) {
+                lang.logWarning("log.biome.error-clearing-db", e.getMessage());
+            } finally {
+                restoreRunning.set(false);
+            }
+        };
 
-                processedChunks.clear();
-                manualChunks.clear();
-                knownSnapshotChunks.clear();
-                playerPendingChunks.clear();
-                chunkRetryCount.clear();
+        final WrappedTask[] restoreTask = new WrappedTask[1];
+        final java.util.function.BiConsumer<BiomeSnapshotDatabase.ChunkCoords, Exception> schedulingFailed = (failed, error) -> {
+            lang.logWarning("log.biome.chunk-error", failed.x, failed.z, error.getMessage());
+            errors.incrementAndGet();
+            finished.incrementAndGet();
+            completionCheck.run();
+        };
+        restoreTask[0] = scheduler.runGlobalTaskTimer(() -> {
+            try {
+                int plannedThisTick = 0;
+                while (plannedThisTick < budget && scheduled[0] < totalChunks && loading.get() < maxLoading) {
+                    final BiomeSnapshotDatabase.ChunkCoords coords = allChunks.get(scheduled[0]);
+                    scheduled[0]++;
+                    plannedThisTick++;
 
-                // Successfully restored chunks were deleted individually; failed ones stay
-                // in the database and are retried on the next '/xmas off'
-                try {
-                    if (errors.get() > 0) {
-                        lang.logWarning("log.biome.chunks-kept-for-retry", errors.get());
-                    } else {
-                        database.clearAll(); // already empty - just compacts the file
-                    }
-                    database.close();
-                    plugin.debug("Database closed after restore");
-                    // Only null out 'db' if it is still our instance - '/xmas on' during the
-                    // restore may already have opened a new one
-                    if (db == database) db = null;
-                } catch (Exception e) {
-                    lang.logWarning("log.biome.error-clearing-db", e.getMessage());
-                } finally {
-                    restoreRunning.set(false);
-                }
-            };
-
-            final WrappedTask[] restoreTask = new WrappedTask[1];
-            restoreTask[0] = scheduler.runGlobalTaskTimer(() -> {
-                try {
-                    int plannedThisTick = 0;
-                    while (plannedThisTick < budget && scheduled[0] < totalChunks) {
-                        final BiomeSnapshotDatabase.ChunkCoords coords = allChunks.get(scheduled[0]);
-                        scheduled[0]++;
-                        plannedThisTick++;
-
-                        BiomeSnapshotDatabase.BiomeSnapshot3D loadedSnapshot = null;
-                        World world = Bukkit.getWorld(coords.world);
-                        try {
-                            if (world == null) {
-                                lang.logWarning("log.biome.world-not-found", coords.world);
-                            } else {
-                                loadedSnapshot = database.loadChunk3D(coords.world, coords.x, coords.z);
-                                if (loadedSnapshot == null) {
-                                    lang.logWarning("log.biome.chunk-data-not-in-db", coords.x, coords.z);
-                                }
+                    BiomeSnapshotDatabase.BiomeSnapshot3D loadedSnapshot = null;
+                    World world = Bukkit.getWorld(coords.world);
+                    try {
+                        if (world == null) {
+                            lang.logWarning("log.biome.world-not-found", coords.world);
+                        } else {
+                            loadedSnapshot = database.loadChunk3D(coords.world, coords.x, coords.z);
+                            if (loadedSnapshot == null) {
+                                lang.logWarning("log.biome.chunk-data-not-in-db", coords.x, coords.z);
                             }
-                        } catch (Exception chunkError) {
-                            lang.logWarning("log.biome.chunk-error", coords.x, coords.z, chunkError.getMessage());
-                            loadedSnapshot = null;
                         }
+                    } catch (Exception chunkError) {
+                        lang.logWarning("log.biome.chunk-error", coords.x, coords.z, chunkError.getMessage());
+                        loadedSnapshot = null;
+                    }
 
-                        // A chunk that failed to load still counts as finished, otherwise the
-                        // completion check never fires
-                        if (loadedSnapshot == null) {
-                            errors.incrementAndGet();
+                    // A chunk that failed to load still counts as finished, otherwise the
+                    // completion check never fires
+                    if (loadedSnapshot == null) {
+                        errors.incrementAndGet();
+                        finished.incrementAndGet();
+                        completionCheck.run();
+                        continue;
+                    }
+
+                    final BiomeSnapshotDatabase.BiomeSnapshot3D snapshot = loadedSnapshot;
+                    final World finalWorld = world;
+                    final int chunkX = coords.x;
+                    final int chunkZ = coords.z;
+
+                    // Every chunk runs on its own region (batching is not allowed on Folia)
+                    final Runnable restoreOnOwner = () -> scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(finalWorld, chunkX, chunkZ), () -> {
+                        boolean success = false;
+                        try {
+                            Chunk chunk = finalWorld.getChunkAt(chunkX, chunkZ);
+                            if (!chunk.isLoaded() && !finalWorld.loadChunk(chunkX, chunkZ, true)) {
+                                lang.logWarning("log.biome.chunk-not-loaded-db", chunkX, chunkZ);
+                            } else {
+                                chunk = finalWorld.getChunkAt(chunkX, chunkZ);
+                                restoreChunkBiomes3D(finalWorld, chunk, snapshot);
+                                removeWinterBlocks3D(finalWorld, chunk, snapshot);
+                                cleanNeighbourBorders(finalWorld, chunkX, chunkZ, restoreSet, snapshot);
+                                refreshChunkSafe(finalWorld, chunk);
+                                success = true;
+                            }
+                        } catch (Exception e) {
+                            lang.logWarning("log.biome.error-restoring-chunk", chunkX, chunkZ, e.getMessage());
+                            if (plugin.isDebugMode()) e.printStackTrace();
+                        } finally {
+                            if (success) {
+                                restored.incrementAndGet();
+                                // Delete only after a successful restore, otherwise the
+                                // chunk would never be retried
+                                try {
+                                    database.deleteChunk(coords.world, chunkX, chunkZ);
+                                    database.deletePlaced(coords.world, chunkX, chunkZ);
+                                } catch (SQLException e) {
+                                    lang.logWarning("log.database.delete-chunk-error", e.getMessage());
+                                }
+                            } else {
+                                errors.incrementAndGet();
+                                lang.logWarning("log.biome.chunk-not-restored", chunkX, chunkZ);
+                            }
                             finished.incrementAndGet();
                             completionCheck.run();
-                            continue;
                         }
+                    });
 
-                        final BiomeSnapshotDatabase.BiomeSnapshot3D snapshot = loadedSnapshot;
-                        final World finalWorld = world;
-                        final int chunkX = coords.x;
-                        final int chunkZ = coords.z;
-
-                        // Every chunk runs on its own region (batching is not allowed on Folia).
-                        // If scheduling itself throws (world unloading, plugin disabling), the
-                        // chunk must still be counted.
-                        try {
-                            scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(finalWorld, chunkX, chunkZ), () -> {
-                                boolean success = false;
+                    // If scheduling itself throws (world unloading, plugin disabling), the
+                    // chunk must still be counted
+                    try {
+                        if (finalWorld.isChunkLoaded(chunkX, chunkZ)) {
+                            restoreOnOwner.run();
+                        } else {
+                            // Load off-thread first, so the restore never blocks the server on
+                            // disk I/O. The task itself still runs on the owning thread.
+                            loading.incrementAndGet();
+                            finalWorld.getChunkAtAsync(chunkX, chunkZ, true).whenComplete((loaded, loadError) -> {
+                                loading.decrementAndGet();
                                 try {
-                                    Chunk chunk = finalWorld.getChunkAt(chunkX, chunkZ);
-                                    if (!chunk.isLoaded() && !finalWorld.loadChunk(chunkX, chunkZ, true)) {
-                                        lang.logWarning("log.biome.chunk-not-loaded-db", chunkX, chunkZ);
-                                    } else {
-                                        chunk = finalWorld.getChunkAt(chunkX, chunkZ);
-                                        restoreChunkBiomes3D(finalWorld, chunk, snapshot);
-                                        removeWinterBlocks3D(finalWorld, chunk, snapshot);
-                                        cleanNeighbourBorders(finalWorld, chunkX, chunkZ, restoreSet, snapshot);
-                                        refreshChunkSafe(finalWorld, chunk);
-                                        success = true;
-                                    }
-                                } catch (Exception e) {
-                                    lang.logWarning("log.biome.error-restoring-chunk", chunkX, chunkZ, e.getMessage());
-                                    if (plugin.isDebugMode()) e.printStackTrace();
-                                } finally {
-                                    if (success) {
-                                        restored.incrementAndGet();
-                                        // Delete only after a successful restore, otherwise the
-                                        // chunk would never be retried
-                                        try {
-                                            database.deleteChunk(coords.world, chunkX, chunkZ);
-                                            database.deletePlaced(coords.world, chunkX, chunkZ);
-                                        } catch (SQLException e) {
-                                            lang.logWarning("log.database.delete-chunk-error", e.getMessage());
-                                        }
-                                    } else {
-                                        errors.incrementAndGet();
-                                        lang.logWarning("log.biome.chunk-not-restored", chunkX, chunkZ);
-                                    }
-                                    finished.incrementAndGet();
-                                    completionCheck.run();
+                                    restoreOnOwner.run();
+                                } catch (Exception schedulingError) {
+                                    schedulingFailed.accept(coords, schedulingError);
                                 }
                             });
-                        } catch (Exception schedulingError) {
-                            lang.logWarning("log.biome.chunk-error", chunkX, chunkZ, schedulingError.getMessage());
-                            errors.incrementAndGet();
-                            finished.incrementAndGet();
-                            completionCheck.run();
                         }
+                    } catch (Exception schedulingError) {
+                        schedulingFailed.accept(coords, schedulingError);
                     }
-
-                    if (scheduled[0] % 50 == 0 && scheduled[0] < totalChunks) {
-                        lang.logInfo("log.biome.restore-progress", scheduled[0], totalChunks, restored.get(), errors.get());
-                    }
-
-                    // Stop the timer once everything is scheduled; the wrap-up happens in the
-                    // completion check of the last region task
-                    if (scheduled[0] >= totalChunks && restoreTask[0] != null) {
-                        restoreTask[0].cancel();
-                    }
-                } catch (Exception e) {
-                    lang.logSevere("log.biome.fatal-error", e.getMessage());
-                    e.printStackTrace();
-                    if (restoreTask[0] != null) {
-                        restoreTask[0].cancel();
-                    }
-                    // Count chunks that will never be scheduled, otherwise the database stays open
-                    int neverScheduled = totalChunks - scheduled[0];
-                    if (neverScheduled > 0) {
-                        errors.addAndGet(neverScheduled);
-                        finished.addAndGet(neverScheduled);
-                    }
-                    completionCheck.run();
                 }
-            }, 1L, 1L);
 
+                if (plannedThisTick > 0 && scheduled[0] % 50 == 0 && scheduled[0] < totalChunks) {
+                    lang.logInfo("log.biome.restore-progress", scheduled[0], totalChunks, restored.get(), errors.get());
+                }
+
+                // Stop the timer once everything is scheduled; the wrap-up happens in the
+                // completion check of the last region task
+                if (scheduled[0] >= totalChunks && restoreTask[0] != null) {
+                    restoreTask[0].cancel();
+                }
+            } catch (Exception e) {
+                lang.logSevere("log.biome.fatal-error", e.getMessage());
+                e.printStackTrace();
+                if (restoreTask[0] != null) {
+                    restoreTask[0].cancel();
+                }
+                // Count chunks that will never be scheduled, otherwise the database stays open
+                int neverScheduled = totalChunks - scheduled[0];
+                if (neverScheduled > 0) {
+                    errors.addAndGet(neverScheduled);
+                    finished.addAndGet(neverScheduled);
+                }
+                completionCheck.run();
+            }
+        }, 1L, 1L);
+
+    }
+
+    /** @return the opened snapshot database, or {@code null} if there is none or it cannot be opened */
+    private BiomeSnapshotDatabase openExistingDatabase() {
+        if (!new java.io.File(plugin.getDataFolder(), "biome-snapshot.db").exists()) return null;
+        BiomeSnapshotDatabase database = new BiomeSnapshotDatabase(plugin);
+        try {
+            database.open();
+            return database;
         } catch (SQLException e) {
-            lang.logSevere("log.biome.error-retrieving-data", e.getMessage());
-            e.printStackTrace();
-            restoreRunning.set(false);
+            lang.logSevere("log.biome.error-opening-database", e.getMessage());
+            return null;
         }
     }
 
@@ -640,6 +725,7 @@ public class BiomeSnowManager {
 
                 scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(world, nx, nz), () -> {
                     if (!world.isChunkLoaded(nx, nz)) return;
+                    if (plugin.getRegionIntegration() != null && plugin.getRegionIntegration().isBiomeExcluded(world, nx, nz)) return;
                     int bx = nx << 4, bz = nz << 4;
                     int[] removed = new int[2];
                     byte[] placed = placedMask(db, world, nx, nz);
@@ -686,15 +772,27 @@ public class BiomeSnowManager {
         }
     }
 
-    /** Deletes all snapshots (database only, world untouched). */
-    public void clearSnapshot() {
-        if (db != null) {
-            try {
-                db.clearAll();
-                lang.logInfo("log.biome.snapshot-deleted");
-            } catch (SQLException e) {
-                lang.logSevere("log.biome.error-deleting-snapshot", e.getMessage());
-            }
+    /**
+     * Deletes all snapshots (database only, world untouched). A closed database is opened
+     * for the call and closed again.
+     *
+     * @return {@code false} if the snapshots could not be deleted
+     */
+    public boolean clearSnapshot() {
+        boolean temporary = db == null;
+        BiomeSnapshotDatabase database = temporary ? openExistingDatabase() : db;
+        if (database == null) {
+            return !new java.io.File(plugin.getDataFolder(), "biome-snapshot.db").exists();
+        }
+        try {
+            database.clearAll();
+            lang.logInfo("log.biome.snapshot-deleted");
+            return true;
+        } catch (SQLException e) {
+            lang.logSevere("log.biome.error-deleting-snapshot", e.getMessage());
+            return false;
+        } finally {
+            if (temporary) database.close();
         }
     }
 
@@ -725,6 +823,7 @@ public class BiomeSnowManager {
         int baseCZ = loc.getBlockZ() >> 4;
 
         Set<ChunkKey> pending = collectAroundPlayer(p, w);
+        final int keepRange = w.getViewDistance() + PENDING_RANGE_MARGIN;
 
         // Nearest chunks first so the area around the player closes before the trail behind
         List<ChunkKey> ordered = new ArrayList<>(pending);
@@ -737,10 +836,12 @@ public class BiomeSnowManager {
             if (!key.world.equals(w.getName()) || processedChunks.contains(key) || manualChunks.contains(key)) continue;
             final int chunkX = key.x, chunkZ = key.z;
             scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(w, chunkX, chunkZ), () -> {
-                // Not loaded yet (typical when flying): put it back, it gets another turn
                 if (!w.isChunkLoaded(chunkX, chunkZ)) {
+                    // Near the player it is still loading and gets another turn. Further away it
+                    // stays unloaded; the radius scan collects it again once a player returns.
+                    boolean near = Math.max(Math.abs(chunkX - baseCX), Math.abs(chunkZ - baseCZ)) <= keepRange;
                     Set<ChunkKey> mine = playerPendingChunks.get(p.getUniqueId());
-                    if (mine != null && plugin.isActive()) mine.add(key);
+                    if (near && mine != null && plugin.isActive()) mine.add(key);
                     return;
                 }
                 processChunkAt(w, chunkX, chunkZ);
@@ -762,6 +863,12 @@ public class BiomeSnowManager {
         int baseCZ = loc.getBlockZ() >> 4;
 
         Set<ChunkKey> pending = playerPendingChunks.computeIfAbsent(p.getUniqueId(), k -> ConcurrentHashMap.newKeySet());
+        // Moving players add chunks faster than the budget converts them. Whatever they left
+        // behind is collected again as soon as a player is near it.
+        final int keepRange = w.getViewDistance() + PENDING_RANGE_MARGIN;
+        pending.removeIf(k -> !k.world.equals(w.getName())
+                || Math.max(Math.abs(k.x - baseCX), Math.abs(k.z - baseCZ)) > keepRange);
+
         for (int dx = -r; dx <= r; dx++) {
             for (int dz = -r; dz <= r; dz++) {
                 ChunkKey key = new ChunkKey(w.getName(), baseCX + dx, baseCZ + dz);
@@ -835,7 +942,7 @@ public class BiomeSnowManager {
         // Region tasks scheduled before '/xmas off' may still arrive here after the stop.
         // Without this guard they would re-convert chunks the restore has just reset and
         // write a fresh (already snowy) snapshot that the restore never sees.
-        if (!plugin.isActive() || restoreRunning.get()) return;
+        if (!isConversionAllowed()) return;
 
         ChunkKey key = new ChunkKey(w.getName(), chunkX, chunkZ);
         if (processedChunks.contains(key) || manualChunks.contains(key)) {
@@ -862,7 +969,9 @@ public class BiomeSnowManager {
 
         Chunk chunk = w.getChunkAt(chunkX, chunkZ);
         Biome target = getTargetBiome();
-        snapshotIfAbsent(w, chunk);
+        // Without a snapshot the original biome would be lost; the chunk stays unprocessed and
+        // is tried again the next time it is collected
+        if (!snapshotIfAbsent(w, chunk)) return;
         if (applyUniformBiomeColumn(w, chunk, target)) {
             placeInstantSnow(w, chunk);
             refreshChunkSafe(w, chunk);
@@ -946,14 +1055,14 @@ public class BiomeSnowManager {
 
     /**
      * Converts every generated chunk within {@code radiusChunks} of the world spawn,
-     * budgeted by {@code biome.playerBubble.perTickBudget} per tick. Chunks are loaded
-     * on their owning thread, snapshotted, converted and left to the server's normal
-     * unloading. Used for maps and servers that want the whole world white.
+     * {@code biome.convertAll.perTick} chunks per tick. Chunks are loaded off-thread,
+     * then snapshotted and converted on their owning thread and left to the server's
+     * normal unloading. Used for maps and servers that want the whole world white.
      *
      * @return {@code false} if the event is inactive or a conversion is already running
      */
     public boolean startConvertAll(World w, int radiusChunks, java.util.function.Consumer<String> progress) {
-        if (!plugin.isActive() || convertTask != null) return false;
+        if (!isConversionAllowed() || convertTask != null) return false;
         int r = Math.max(1, radiusChunks);
         Location spawn = w.getSpawnLocation();
         int cx0 = spawn.getBlockX() >> 4, cz0 = spawn.getBlockZ() >> 4;
@@ -967,36 +1076,51 @@ public class BiomeSnowManager {
         convertTotal = coords.size();
         convertScheduled = 0;
         convertDone = 0;
-        final int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 8));
+        final int budget = Math.max(1, plugin.getConfig().getInt("biome.convertAll.perTick", 2));
+        final int maxLoading = budget * LOADS_PER_BUDGET;
+        final AtomicInteger loading = new AtomicInteger();
         final AtomicInteger done = new AtomicInteger();
         final long start = System.currentTimeMillis();
 
+        final Runnable chunkFinished = () -> {
+            int d = done.incrementAndGet();
+            convertDone = d;
+            if (d % 200 == 0 || d == convertTotal) {
+                progress.accept(lang.getMessage("log.convert.progress", d, convertTotal));
+            }
+            if (d == convertTotal) {
+                progress.accept(lang.getMessage("log.convert.complete", d, (System.currentTimeMillis() - start) / 1000.0));
+                cancelConvertAll();
+            }
+        };
+
         convertTask = scheduler.runGlobalTaskTimer(() -> {
             int planned = 0;
-            while (planned < budget && convertScheduled < convertTotal) {
+            while (planned < budget && convertScheduled < convertTotal && loading.get() < maxLoading) {
                 int[] c = coords.get(convertScheduled++);
                 planned++;
                 final int chunkX = c[0], chunkZ = c[1];
-                scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(w, chunkX, chunkZ), () -> {
+                final Runnable convertOnOwner = () -> scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(w, chunkX, chunkZ), () -> {
                     try {
-                        if (plugin.isActive() && w.isChunkGenerated(chunkX, chunkZ)) {
-                            w.getChunkAt(chunkX, chunkZ); // synchronous load on the owning thread
-                            processChunkAt(w, chunkX, chunkZ);
-                        }
+                        processChunkAt(w, chunkX, chunkZ);
                     } catch (Exception e) {
                         lang.logWarning("log.biome.chunk-error", chunkX, chunkZ, e.getMessage());
                     } finally {
-                        int d = done.incrementAndGet();
-                        convertDone = d;
-                        if (d % 200 == 0 || d == convertTotal) {
-                            progress.accept(lang.getMessage("log.convert.progress", d, convertTotal));
-                        }
-                        if (d == convertTotal) {
-                            progress.accept(lang.getMessage("log.convert.complete", d, (System.currentTimeMillis() - start) / 1000.0));
-                            cancelConvertAll();
-                        }
+                        chunkFinished.run();
                     }
                 });
+
+                if (w.isChunkLoaded(chunkX, chunkZ)) {
+                    convertOnOwner.run();
+                } else {
+                    // Ungenerated chunks complete with null and are skipped
+                    loading.incrementAndGet();
+                    w.getChunkAtAsync(chunkX, chunkZ, false).whenComplete((chunk, loadError) -> {
+                        loading.decrementAndGet();
+                        if (chunk == null) chunkFinished.run();
+                        else convertOnOwner.run();
+                    });
+                }
             }
         }, 1L, 1L);
         return true;
@@ -1148,16 +1272,18 @@ public class BiomeSnowManager {
      * Stores the original biomes of a chunk (configured Y range)
      * unless a snapshot already exists. Samples one value per 4x4x4 cell.
      */
-    private void snapshotIfAbsent(World w, Chunk c) {
-        if (db == null) return;
+    private boolean snapshotIfAbsent(World w, Chunk c) {
+        BiomeSnapshotDatabase database = db;
+        if (database == null) return !plugin.getConfig().getBoolean("biome.enableSnapshot", true);
+        if (!database.isOpen()) return false;
 
         ChunkKey key = new ChunkKey(w.getName(), c.getX(), c.getZ());
-        if (knownSnapshotChunks.contains(key)) return;
+        if (knownSnapshotChunks.contains(key)) return true;
 
         try {
-            if (db.hasChunk(key.world, key.x, key.z)) {
+            if (database.hasChunk(key.world, key.x, key.z)) {
                 knownSnapshotChunks.add(key);
-                return;
+                return true;
             }
 
             plugin.verboseDebugLang("log.debug.snapshot.creating", key.x, key.z);
@@ -1221,13 +1347,19 @@ public class BiomeSnowManager {
                 }
             }
 
-            db.saveChunk3D(key.world, key.x, key.z, biomes3D, minY, yStep, snowMask, iceMask);
+            database.saveChunk3D(key.world, key.x, key.z, biomes3D, minY, yStep, snowMask, iceMask);
             knownSnapshotChunks.add(key);
             plugin.verboseDebugLang("log.debug.snapshot.saved", key.x, key.z, yLayers);
+            return true;
 
         } catch (SQLException e) {
-            lang.logWarning("log.biome.error-saving-snapshot", e.getMessage());
+            long now = System.currentTimeMillis();
+            if (now - lastSnapshotWarning >= SNAPSHOT_WARNING_INTERVAL_MS) {
+                lastSnapshotWarning = now;
+                lang.logWarning("log.biome.error-saving-snapshot", e.getMessage());
+            }
             if (plugin.isDebugMode()) e.printStackTrace();
+            return false;
         }
     }
 
@@ -1301,8 +1433,8 @@ public class BiomeSnowManager {
      * @return number of chunks scheduled (not the number actually changed)
      */
     public int setBiomeAroundPlayer(Player p, Biome target, int radiusChunks) {
-        if (!plugin.isActive()) {
-            return -1; // caller reports "only while active"
+        if (!isConversionAllowed()) {
+            return -1; // caller has reported the reason already, or reports "only while active"
         }
 
         World w = p.getWorld();
@@ -1323,10 +1455,10 @@ public class BiomeSnowManager {
                 manualChunks.add(new ChunkKey(w.getName(), chunkX, chunkZ));
 
                 scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(w, chunkX, chunkZ), () -> {
-                    if (!plugin.isActive() || restoreRunning.get()) return;
+                    if (!isConversionAllowed()) return;
                     if (!w.isChunkLoaded(chunkX, chunkZ)) return;
                     Chunk chunk = w.getChunkAt(chunkX, chunkZ);
-                    snapshotIfAbsent(w, chunk);
+                    if (!snapshotIfAbsent(w, chunk)) return;
                     if (applyUniformBiomeColumn(w, chunk, target)) {
                         refreshChunkSafe(w, chunk);
                     }

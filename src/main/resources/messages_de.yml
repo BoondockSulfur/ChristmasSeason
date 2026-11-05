@@ -43,6 +43,7 @@ command:
 
   biome:
     usage: "&b/xmas biome &7<set|clearsnap|status|info|compare|fix-diff|convert-all>"
+    conversion-unavailable: "&cBiom-Änderungen sind nicht verfügbar: &7'biome.enabled' ist aus oder die Snapshot-Datenbank konnte nicht geöffnet werden."
 
     set:
       usage: "&b/xmas biome set &e<BIOM> &7[radius_chunks]"
@@ -56,6 +57,7 @@ command:
 
     clearsnap:
       success: "&aSnapshot gelöscht."
+      failed: "&cDer Snapshot konnte nicht gelöscht werden. &7Details stehen in der Konsole."
       blocked-active: "&c&lFEHLER: ChristmasSeason ist aktiv! &7Das Löschen des Snapshots bei geänderten Biomen würde die Originale dauerhaft verlieren. Zuerst '/xmas off'."
       no-backup: "&c&lWARNUNG: Kein Backup vorhanden! &7Erst eines anlegen: '/xmas backup create'"
 
@@ -236,6 +238,8 @@ log:
     db-check-failed: "Datenbank-Integritätsprüfung fehlgeschlagen: {0} - die Datenbank könnte beschädigt sein, siehe /xmas backup list"
     emergency-found-1: " {0} Notfall-Backup(s) gefunden - der Server wurde gestoppt, während ChristmasSeason aktiv war."
     emergency-found-2: " Nach einem Neustart während des Events normal. Falls Biome falsch aussehen: /xmas backup list -> /xmas backup restore <ID> confirm"
+    restore-unfinished-1: " {0} Chunk(s) aus einem unvollständigen Restore warten noch - das Event ist aus, ihre Biome sind aber noch nicht zurückgesetzt."
+    restore-unfinished-2: " Führe /xmas off aus, um den Restore abzuschließen."
     stopped-while-active: "Server stoppt, während ChristmasSeason AKTIV ist - erstelle Notfall-Backup der Biome-Datenbank."
 
   cleanup:

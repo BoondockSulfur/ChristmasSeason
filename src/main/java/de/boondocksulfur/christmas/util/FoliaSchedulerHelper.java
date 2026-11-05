@@ -8,6 +8,10 @@ import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayDeque;
+import java.util.Collection;
+import java.util.Deque;
+
 /**
  * Thin wrapper around FoliaLib that gives every manager the same scheduling
  * vocabulary on Paper, Purpur and Folia.
@@ -145,13 +149,34 @@ public class FoliaSchedulerHelper {
     }
 
     /**
-     * Executes a task for every loaded chunk of a world, each on the region that
-     * owns the chunk. On Paper this simply runs on the main thread.
+     * Runs a task for every chunk currently loaded in the worlds, each on the thread that
+     * owns the chunk, at most {@code chunksPerTick} per tick. Chunks that unload before
+     * their turn are skipped, not loaded again.
+     *
+     * @return handle to cancel the remaining chunks, or {@code null} if there are none
      */
-    public void forEachLoadedChunk(World world, ChunkTask task) {
-        for (Chunk chunk : world.getLoadedChunks()) {
-            runAtLocation(chunkCenter(chunk.getWorld(), chunk.getX(), chunk.getZ()), () -> task.accept(chunk));
+    public WrappedTask forEachLoadedChunk(Collection<World> worlds, int chunksPerTick, ChunkTask task) {
+        Deque<Location> remaining = new ArrayDeque<>();
+        for (World world : worlds) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                remaining.add(chunkCenter(world, chunk.getX(), chunk.getZ()));
+            }
         }
+        if (remaining.isEmpty()) return null;
+
+        WrappedTask[] timer = new WrappedTask[1];
+        timer[0] = runGlobalTaskTimer(() -> {
+            for (int i = 0; i < chunksPerTick && !remaining.isEmpty(); i++) {
+                Location center = remaining.poll();
+                runAtLocation(center, () -> {
+                    World world = center.getWorld();
+                    int chunkX = center.getBlockX() >> 4, chunkZ = center.getBlockZ() >> 4;
+                    if (world.isChunkLoaded(chunkX, chunkZ)) task.accept(world.getChunkAt(chunkX, chunkZ));
+                });
+            }
+            if (remaining.isEmpty()) timer[0].cancel();
+        }, 1L, 1L);
+        return timer[0];
     }
 
     /** Location in the middle of a chunk, used to pick the owning region. */

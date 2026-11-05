@@ -105,6 +105,7 @@ public class XmasCommand implements CommandExecutor {
     }
 
     private void handleReload(CommandSender sender) {
+        if (rejectWhileRestoring(sender)) return;
         try {
             plugin.reloadAll();
             lang.send(sender, "command.reload.success");
@@ -129,6 +130,7 @@ public class XmasCommand implements CommandExecutor {
                 lang.send(sender, "command.biome.restore.disabled");
             }
             case "clearsnap" -> {
+                if (rejectWhileRestoring(sender)) return;
                 if (plugin.isActive()) {
                     lang.send(sender, "command.biome.clearsnap.blocked-active");
                     return;
@@ -137,8 +139,8 @@ public class XmasCommand implements CommandExecutor {
                     lang.send(sender, "command.biome.clearsnap.no-backup");
                     return;
                 }
-                plugin.getBiomeSnowManager().clearSnapshot();
-                lang.send(sender, "command.biome.clearsnap.success");
+                lang.send(sender, plugin.getBiomeSnowManager().clearSnapshot()
+                        ? "command.biome.clearsnap.success" : "command.biome.clearsnap.failed");
             }
             case "status" -> handleBiomeStatus(sender);
             case "compare" -> handleCompare(sender, args);
@@ -147,6 +149,20 @@ public class XmasCommand implements CommandExecutor {
             case "info" -> handleBiomeInfo(sender);
             default -> lang.send(sender, "command.biome.usage");
         }
+    }
+
+    /** The restore owns the database: commands that close or replace it have to wait. */
+    private boolean rejectWhileRestoring(CommandSender sender) {
+        if (!plugin.getBiomeSnowManager().isRestoring()) return false;
+        lang.send(sender, "command.on.restore-running");
+        return true;
+    }
+
+    /** Reports why an active event cannot convert chunks; {@code /xmas off} is still possible. */
+    private boolean rejectConversion(CommandSender sender) {
+        if (!plugin.isActive() || plugin.getBiomeSnowManager().isConversionAllowed()) return false;
+        lang.send(sender, "command.biome.conversion-unavailable");
+        return true;
     }
 
     private void handleBiomeSet(CommandSender sender, String[] args) {
@@ -170,6 +186,7 @@ public class XmasCommand implements CommandExecutor {
             catch (NumberFormatException ex) { lang.send(sender, "command.biome.set.invalid-radius"); return; }
         }
 
+        if (rejectConversion(sender)) return;
         int scheduled = plugin.getBiomeSnowManager().setBiomeAroundPlayer(player, target, r);
         if (scheduled < 0) {
             lang.send(sender, "command.biome.set.only-active");
@@ -300,6 +317,7 @@ public class XmasCommand implements CommandExecutor {
             lang.send(sender, "command.biome.convert-all.only-active");
             return;
         }
+        if (rejectConversion(sender)) return;
         if (m.isConvertRunning()) {
             lang.send(sender, "command.biome.convert-all.running", m.getConvertProgress());
             return;
@@ -517,6 +535,7 @@ public class XmasCommand implements CommandExecutor {
                     lang.send(sender, "log.backup.restore-command", args[2]);
                     return;
                 }
+                if (rejectWhileRestoring(sender)) return;
                 lang.send(sender, "command.backup.restoring");
                 if (backup.restoreBackup(backupFile)) {
                     lang.send(sender, "command.backup.restored");
@@ -526,11 +545,8 @@ public class XmasCommand implements CommandExecutor {
             }
             case "create" -> {
                 lang.send(sender, "command.backup.creating");
-                if (backup.createTimestampBackup()) {
-                    lang.send(sender, "command.backup.created");
-                } else {
-                    lang.send(sender, "command.backup.create-failed");
-                }
+                plugin.getFoliaScheduler().runAsync(() -> lang.send(sender,
+                        backup.createTimestampBackup() ? "command.backup.created" : "command.backup.create-failed"));
             }
             case "clear" -> {
                 int deleted = backup.clearAllBackups();

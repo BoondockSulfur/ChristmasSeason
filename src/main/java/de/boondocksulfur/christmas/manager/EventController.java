@@ -61,7 +61,8 @@ public class EventController {
         }
 
         if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-            boolean backupOk = plugin.getBackupManager().createSafeBackup();
+            // An active event has already changed chunks: SAFE keeps the state from before it
+            boolean backupOk = plugin.isActive() || plugin.getBackupManager().createSafeBackup();
             if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
                 lang.send(feedback, "command.on.backup-failed");
             }
@@ -81,15 +82,15 @@ public class EventController {
 
     /** Deactivates the event: backup, cleanup, budgeted biome restore, API event. */
     public void deactivate(CommandSender feedback, XmasStateChangeEvent.Cause cause) {
-        if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-            boolean backupOk = plugin.getBackupManager().createTimestampBackup();
-            if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
-                lang.send(feedback, "command.off.backup-failed");
-            }
+        if (plugin.getBiomeSnowManager().isRestoring()) {
+            lang.send(feedback, "command.on.restore-running");
+            return;
         }
 
+        boolean managesWeather = !"none".equalsIgnoreCase(plugin.getConfig().getString("snowstorm.mode", "manual"));
+
         plugin.setActive(false);
-        plugin.getSnowstormManager().setStorm(false);
+        if (managesWeather) plugin.getSnowstormManager().setStorm(false);
         plugin.getBiomeSnowManager().cancelConvertAll();
 
         // Cleanup BEFORE stopFeatures() so the trackers are still populated
@@ -98,14 +99,21 @@ public class EventController {
         plugin.getGiftManager().cleanup();
         plugin.getWichtelManager().cleanup();
         plugin.getSnowmanManager().cleanup();
+        plugin.getLoadedObjectSync().start();
 
         // Keep the database open - the restore needs it and closes it itself
         plugin.stopFeatures(false);
 
         int perTick = Math.max(1, plugin.getConfig().getInt("biome.restore.perTick", 4));
-        plugin.getBiomeSnowManager().restoreALLAsync(perTick);
+        Runnable backup = !plugin.getConfig().getBoolean("biome.enableSnapshot", true) ? null : () -> {
+            boolean backupOk = plugin.getBackupManager().createTimestampBackup();
+            if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
+                lang.send(feedback, "command.off.backup-failed");
+            }
+        };
+        plugin.getBiomeSnowManager().restoreALLAsync(perTick, backup);
 
-        if (!"none".equalsIgnoreCase(plugin.getConfig().getString("snowstorm.mode", "manual"))) {
+        if (managesWeather) {
             for (String name : plugin.getSnowWorldNames()) {
                 World w = Bukkit.getWorld(name);
                 if (w == null) continue;

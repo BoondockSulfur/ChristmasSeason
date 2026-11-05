@@ -50,7 +50,7 @@ public class WichtelManager {
 
     /**
      * Stops spawn and AI timers. Tracking sets are kept so that {@code /xmas reload}
-     * keeps the spawn caps intact; AI tasks are re-armed by {@link #adoptLoaded()}.
+     * keeps the spawn caps intact; AI tasks are re-armed by {@link LoadedObjectSync}.
      */
     public void stop() {
         for (WrappedTask task : playerWichtelTasks.values()) {
@@ -152,19 +152,8 @@ public class WichtelManager {
         }
     }
 
-    /** Scans all loaded chunks of the mob worlds and adopts tagged mobs. */
-    public void adoptLoaded() {
-        for (World w : mobWorlds()) {
-            scheduler.forEachLoadedChunk(w, chunk -> {
-                for (Entity e : chunk.getEntities()) {
-                    if (isEventMob(e)) adopt(e);
-                }
-            });
-        }
-    }
-
     /** Snow worlds plus the optional extra {@code wichtel.world} / {@code elves.world}. */
-    private java.util.List<World> mobWorlds() {
+    public java.util.List<World> mobWorlds() {
         java.util.LinkedHashSet<World> worlds = new java.util.LinkedHashSet<>(plugin.getSnowWorlds());
         for (String key : new String[]{"wichtel.world", "elves.world"}) {
             String extra = plugin.getConfig().getString(key);
@@ -182,7 +171,7 @@ public class WichtelManager {
         return plugin.isSnowWorld(w);
     }
 
-    /** Removes all Wichtel and elves ({@code /xmas off}): tracked ones plus untracked ones in loaded chunks. */
+    /** Removes all tracked Wichtel and elves ({@code /xmas off}); untracked ones are found by {@link LoadedObjectSync}. */
     public void cleanup() {
         int removed = 0;
         int wichtelCount = trackedWichtel.size();
@@ -190,14 +179,6 @@ public class WichtelManager {
 
         removed += removeTracked(trackedWichtel);
         removed += removeTracked(trackedElfen);
-
-        for (World w : mobWorlds()) {
-            scheduler.forEachLoadedChunk(w, chunk -> {
-                for (Entity e : chunk.getEntities()) {
-                    if (isEventMob(e)) e.remove();
-                }
-            });
-        }
 
         lang.logInfo("log.cleanup.wichtel", removed, wichtelCount, elfenCount);
     }

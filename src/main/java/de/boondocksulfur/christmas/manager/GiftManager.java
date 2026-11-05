@@ -18,6 +18,7 @@ import de.boondocksulfur.christmas.util.SpawnUtil;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * Spawns gift chests near players and removes them after their lifetime.
@@ -41,6 +42,11 @@ public class GiftManager {
 
     /** Lifetime tasks per chest so cleanup can cancel them. */
     private final Map<Location, WrappedTask> giftLifetimeTasks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Skips the costly block state of every other tile entity when scanning a chunk. */
+    private static final Predicate<Block> IS_CHEST = block -> block.getType() == Material.CHEST;
+
+    private final java.util.concurrent.atomic.AtomicLong lastSpawnBroadcast = new java.util.concurrent.atomic.AtomicLong();
 
     private final NamespacedKey giftChestKey;
     private final NamespacedKey giftOpenedKey;
@@ -138,16 +144,9 @@ public class GiftManager {
         plugin.debug("Adopted gift chest at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
     }
 
-    /** Scans all loaded chunks of the snow worlds for marked chests and adopts them. */
-    public void adoptLoaded() {
-        for (World w : plugin.getSnowWorlds()) {
-            scheduler.forEachLoadedChunk(w, this::adoptInChunk);
-        }
-    }
-
     /** Adopts every marked chest in a chunk; must run on the chunk's thread. */
     public void adoptInChunk(Chunk chunk) {
-        for (BlockState state : chunk.getTileEntities(false)) {
+        for (BlockState state : chunk.getTileEntities(IS_CHEST, false)) {
             if (isMarkedGiftChest(state)) {
                 adopt((Chest) state);
             }
@@ -156,7 +155,7 @@ public class GiftManager {
 
     /** Removes every marked chest in a chunk (event inactive); must run on the chunk's thread. */
     public void removeInChunk(Chunk chunk) {
-        for (BlockState state : chunk.getTileEntities(false)) {
+        for (BlockState state : chunk.getTileEntities(IS_CHEST, false)) {
             if (isMarkedGiftChest(state)) {
                 Location loc = state.getLocation();
                 trackedGifts.remove(loc);
@@ -169,8 +168,8 @@ public class GiftManager {
     }
 
     /**
-     * Removes all gift chests ({@code /xmas off}): tracked ones plus any marked chest in a
-     * loaded chunk that was never tracked (e.g. placed before a restart).
+     * Removes all tracked gift chests ({@code /xmas off}). Chests that were never tracked
+     * are found by {@link LoadedObjectSync}.
      */
     public void cleanup() {
         int removed = 0;
@@ -184,10 +183,6 @@ public class GiftManager {
             scheduler.runAtLocation(loc, () -> removeIfMarked(loc));
             removed++;
             it.remove();
-        }
-
-        for (World w : plugin.getSnowWorlds()) {
-            scheduler.forEachLoadedChunk(w, this::removeInChunk);
         }
 
         lang.logInfo("log.cleanup.gifts", removed);
@@ -210,6 +205,9 @@ public class GiftManager {
 
         Location playerLoc = player.getLocation();
         scheduler.runAtLocation(playerLoc, () -> {
+            int maxPerWorld = plugin.getConfig().getInt("gifts.maxPerWorld", 40);
+            if (maxPerWorld > 0 && countGifts(w) >= maxPerWorld) return;
+
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 8, 5);
             if (loc == null) {
                 plugin.debug("No safe gift spot near " + player.getName());
@@ -221,6 +219,18 @@ public class GiftManager {
             }
             spawnGift(w, loc);
         });
+    }
+
+    private long countGifts(World w) {
+        return trackedGifts.stream().filter(loc -> w.equals(loc.getWorld())).count();
+    }
+
+    /** @return {@code true} if a spawn broadcast may go out now ({@code gifts.broadcastMinIntervalSeconds}) */
+    private boolean claimBroadcastSlot() {
+        long now = System.currentTimeMillis();
+        long last = lastSpawnBroadcast.get();
+        long minInterval = plugin.getConfig().getLong("gifts.broadcastMinIntervalSeconds", 10) * 1000L;
+        return now - last >= minInterval && lastSpawnBroadcast.compareAndSet(last, now);
     }
 
     /**
@@ -259,7 +269,7 @@ public class GiftManager {
         trackedGifts.add(chestLoc);
         scheduleLifetime(chestLoc);
 
-        if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true)) {
+        if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true) && claimBroadcastSlot()) {
             Bukkit.broadcast(lang.getComponent("broadcast.gift-spawned",
                     w.getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ()));
         }

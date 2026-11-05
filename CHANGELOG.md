@@ -2,6 +2,29 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.4.2] - 2026-11-04
+
+### Fixed
+- **WorldGuard/GriefPrevention:** region checks and `biome.exclude` now work; both integrations failed against the real plugin APIs.
+- **Biome safety:** a chunk is only converted once its snapshot is stored; `biome.enabled: false` now stops every conversion path.
+- **Restore:** `/xmas off` picks up snapshots left by a failed or interrupted restore; `reload`, `clearsnap`, `backup restore` and a second `/xmas off` wait for a running restore.
+- **Restore:** excluded areas are no longer touched when neighbouring chunks are cleaned.
+- **`clearsnap`:** now really deletes the snapshots while the event is off.
+- **Folia:** `/xmas backup restore` keeps the biome conversion running for online players; pending chunks far from a player are dropped (now on Paper too).
+- **Snowstorm:** `/xmas storm on` resumes the auto phases, `pulse` returns to the previous state, mode `none` leaves the weather alone on `/xmas off`.
+- **Multiple snow worlds:** `compare`, `fix-diff`, chunk loading and the backup folder now respect `snowWorlds`.
+
+### Changed
+- **Restore:** unloaded chunks are now loaded asynchronously, so `/xmas off` no longer blocks the server on disk access.
+- **Large servers:** `/xmas on`, `off`, `reload` and `feature` scan loaded chunks once and spread over several ticks instead of four full passes in one tick.
+- **Chunk loading:** gift lookups skip new chunks and all tile entities except chests.
+- **Backups:** `/xmas off` and `/xmas backup create` run off the main thread; copies stay consistent while chunks are being written.
+- **`convert-all`, `compare`, `fix-diff`:** chunks are loaded asynchronously; `convert-all` has its own `biome.convertAll.perTick` (default 2).
+- **Gifts:** new `gifts.maxPerWorld` (default 40) and `gifts.broadcastMinIntervalSeconds` (default 10).
+- **`biome.exclude`:** WorldGuard regions and claims are matched exactly, including regions above Y 64 and areas smaller than a chunk.
+- **Startup:** the database check runs off the main thread and warns about an unfinished restore.
+- With WorldGuard or GriefPrevention installed, gifts, decorations and event mobs no longer spawn in regions and claims unless `regionIntegration` allows it.
+
 ## [2.4.1] - 2026-10-12
 
 ### Fixed

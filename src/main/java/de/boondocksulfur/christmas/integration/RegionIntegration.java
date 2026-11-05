@@ -5,9 +5,17 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.Set;
+
 /**
  * Optional WorldGuard and GriefPrevention support (reflection based, soft dependency).
  * Used to keep gifts, decorations and event mobs out of protected regions and claims.
+ *
+ * <p>Every reflective member is resolved once on startup, from the API types rather than
+ * the implementation classes. An incompatible plugin version therefore shows up as a
+ * warning on startup instead of silently failing on each check.
  */
 public class RegionIntegration {
 
@@ -17,9 +25,25 @@ public class RegionIntegration {
 
     // WorldGuard integration (cached via reflection)
     private Object regionContainer;
+    private Method wgAdaptWorld;
+    private Method wgGetRegionManager;
+    private Method wgVectorAt;
+    private Method wgGetApplicableRegions;
+    private Method wgRegionSetSize;
+    private Method wgGetRegion;
+    private Method wgIntersectingRegions;
+    private java.lang.reflect.Constructor<?> wgCuboidRegion;
 
     // GriefPrevention integration (cached via reflection)
     private Object gpDataStore;
+    private Method gpGetClaimAt;
+    private Method gpGetClaimsInChunk;
+    private Method gpLesserCorner;
+    private Method gpIsAdminClaim;
+    private Method gpAllowBuild;
+
+    /** Failed check types already reported, so a broken integration cannot flood the console. */
+    private final Set<String> reportedFailures = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public RegionIntegration(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -35,9 +59,28 @@ public class RegionIntegration {
         if (wg != null && wg.isEnabled()) {
             try {
                 Class<?> wgClass = Class.forName("com.sk89q.worldguard.WorldGuard");
+                Class<?> platformClass = Class.forName("com.sk89q.worldguard.internal.platform.WorldGuardPlatform");
+                Class<?> containerClass = Class.forName("com.sk89q.worldguard.protection.regions.RegionContainer");
+                Class<?> managerClass = Class.forName("com.sk89q.worldguard.protection.managers.RegionManager");
+                Class<?> regionSetClass = Class.forName("com.sk89q.worldguard.protection.ApplicableRegionSet");
+                Class<?> regionClass = Class.forName("com.sk89q.worldguard.protection.regions.ProtectedRegion");
+                Class<?> adapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+                Class<?> weWorldClass = Class.forName("com.sk89q.worldedit.world.World");
+                Class<?> vectorClass = Class.forName("com.sk89q.worldedit.math.BlockVector3");
+
+                wgAdaptWorld = adapterClass.getMethod("adapt", org.bukkit.World.class);
+                wgGetRegionManager = containerClass.getMethod("get", weWorldClass);
+                wgVectorAt = vectorClass.getMethod("at", double.class, double.class, double.class);
+                wgGetApplicableRegions = managerClass.getMethod("getApplicableRegions", vectorClass);
+                wgRegionSetSize = regionSetClass.getMethod("size");
+                wgGetRegion = managerClass.getMethod("getRegion", String.class);
+                wgIntersectingRegions = regionClass.getMethod("getIntersectingRegions", java.util.Collection.class);
+                wgCuboidRegion = Class.forName("com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion")
+                        .getConstructor(String.class, vectorClass, vectorClass);
+
                 Object wgInstance = wgClass.getMethod("getInstance").invoke(null);
                 Object platform = wgClass.getMethod("getPlatform").invoke(wgInstance);
-                regionContainer = platform.getClass().getMethod("getRegionContainer").invoke(platform);
+                regionContainer = platformClass.getMethod("getRegionContainer").invoke(platform);
 
                 worldGuardEnabled = true;
                 plugin.getLogger().info("WorldGuard integration enabled");
@@ -52,8 +95,17 @@ public class RegionIntegration {
         if (gp != null && gp.isEnabled()) {
             try {
                 Class<?> gpClass = Class.forName("me.ryanhamshire.GriefPrevention.GriefPrevention");
-                Object gpInstance = gpClass.getMethod("instance").invoke(null);
-                gpDataStore = gpClass.getMethod("dataStore").invoke(gpInstance);
+                Class<?> dataStoreClass = Class.forName("me.ryanhamshire.GriefPrevention.DataStore");
+                Class<?> claimClass = Class.forName("me.ryanhamshire.GriefPrevention.Claim");
+
+                gpGetClaimAt = dataStoreClass.getMethod("getClaimAt", Location.class, boolean.class, claimClass);
+                gpGetClaimsInChunk = dataStoreClass.getMethod("getClaims", int.class, int.class);
+                gpLesserCorner = claimClass.getMethod("getLesserBoundaryCorner");
+                gpIsAdminClaim = claimClass.getMethod("isAdminClaim");
+                gpAllowBuild = claimClass.getMethod("allowBuild", Player.class, org.bukkit.Material.class);
+
+                Object gpInstance = gpClass.getField("instance").get(null);
+                gpDataStore = gpClass.getField("dataStore").get(gpInstance);
 
                 griefPreventionEnabled = true;
                 plugin.getLogger().info("GriefPrevention integration enabled");
@@ -120,6 +172,17 @@ public class RegionIntegration {
 
     // ==================== WorldGuard ====================
 
+    /** @return the region set at the location, or {@code null} if the world has no region manager */
+    private Object applicableRegions(Location location) throws ReflectiveOperationException {
+        Object weWorld = wgAdaptWorld.invoke(null, location.getWorld());
+        Object regionManager = wgGetRegionManager.invoke(regionContainer, weWorld);
+        if (regionManager == null) {
+            return null;
+        }
+        Object vector = wgVectorAt.invoke(null, location.getX(), location.getY(), location.getZ());
+        return wgGetApplicableRegions.invoke(regionManager, vector);
+    }
+
     /**
      * WorldGuard spawn check (reflection-based)
      */
@@ -130,32 +193,11 @@ public class RegionIntegration {
                 return true;
             }
 
-            // Get RegionManager for the world
-            Object regionManager = regionContainer.getClass()
-                    .getMethod("get", org.bukkit.World.class)
-                    .invoke(regionContainer, location.getWorld());
+            Object regions = applicableRegions(location);
+            return regions == null || (int) wgRegionSetSize.invoke(regions) == 0;
 
-            if (regionManager == null) {
-                return true; // No regions in this world
-            }
-
-            // Convert Bukkit Location to WorldEdit BlockVector3
-            Class<?> vector3Class = Class.forName("com.sk89q.worldedit.math.BlockVector3");
-            Object vector = vector3Class.getMethod("at", double.class, double.class, double.class)
-                    .invoke(null, location.getX(), location.getY(), location.getZ());
-
-            // Get applicable regions at location
-            Object applicableRegions = regionManager.getClass()
-                    .getMethod("getApplicableRegions", vector3Class)
-                    .invoke(regionManager, vector);
-
-            int regionCount = (int) applicableRegions.getClass().getMethod("size").invoke(applicableRegions);
-
-            // Regions exist and allowInProtected is false → deny
-            return regionCount == 0;
-
-        } catch (Exception e) {
-            plugin.debug("WorldGuard check failed: " + e.getMessage());
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportFailure("WorldGuard spawn check", e);
             return true; // Default to allow on error
         }
     }
@@ -169,32 +211,20 @@ public class RegionIntegration {
                 return true;
             }
 
-            Object regionManager = regionContainer.getClass()
-                    .getMethod("get", org.bukkit.World.class)
-                    .invoke(regionContainer, location.getWorld());
+            Object regions = applicableRegions(location);
+            return regions == null || (int) wgRegionSetSize.invoke(regions) == 0;
 
-            if (regionManager == null) {
-                return true;
-            }
-
-            Class<?> vector3Class = Class.forName("com.sk89q.worldedit.math.BlockVector3");
-            Object vector = vector3Class.getMethod("at", double.class, double.class, double.class)
-                    .invoke(null, location.getX(), location.getY(), location.getZ());
-
-            Object applicableRegions = regionManager.getClass()
-                    .getMethod("getApplicableRegions", vector3Class)
-                    .invoke(regionManager, vector);
-
-            int regionCount = (int) applicableRegions.getClass().getMethod("size").invoke(applicableRegions);
-            return regionCount == 0;
-
-        } catch (Exception e) {
-            plugin.debug("WorldGuard player check failed: " + e.getMessage());
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportFailure("WorldGuard player check", e);
             return true;
         }
     }
 
     // ==================== GriefPrevention ====================
+
+    private Object claimAt(Location location) throws ReflectiveOperationException {
+        return gpGetClaimAt.invoke(gpDataStore, location, true, null);
+    }
 
     /**
      * GriefPrevention spawn check
@@ -206,30 +236,16 @@ public class RegionIntegration {
                 return true;
             }
 
-            // Get claim at location
-            Object claim = gpDataStore.getClass()
-                    .getMethod("getClaimAt", Location.class)
-                    .invoke(gpDataStore, location);
-
+            Object claim = claimAt(location);
             if (claim == null) {
                 return true; // No claim → allow
             }
 
-            // Check if it's an admin claim
             boolean allowInAdminClaims = plugin.getConfig().getBoolean("regionIntegration.griefPrevention.allowInAdminClaims", false);
-            if (allowInAdminClaims) {
-                try {
-                    boolean isAdminClaim = (boolean) claim.getClass().getMethod("isAdminClaim").invoke(claim);
-                    if (isAdminClaim) {
-                        return true;
-                    }
-                } catch (Exception ignored) {}
-            }
+            return allowInAdminClaims && (boolean) gpIsAdminClaim.invoke(claim);
 
-            return false; // In claim → deny
-
-        } catch (Exception e) {
-            plugin.debug("GriefPrevention check failed: " + e.getMessage());
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportFailure("GriefPrevention spawn check", e);
             return true;
         }
     }
@@ -239,25 +255,24 @@ public class RegionIntegration {
      */
     private boolean checkGriefPreventionPlayer(Player player, Location location) {
         try {
-            Object claim = gpDataStore.getClass()
-                    .getMethod("getClaimAt", Location.class)
-                    .invoke(gpDataStore, location);
-
+            Object claim = claimAt(location);
             if (claim == null) {
                 return true; // No claim → allow
             }
 
-            // Check if player has build permission in claim
-            String denyReason = (String) claim.getClass()
-                    .getMethod("allowBuild", Player.class, org.bukkit.Material.class)
-                    .invoke(claim, player, org.bukkit.Material.GRASS_BLOCK);
-
             // allowBuild returns null if allowed, error message if denied
-            return denyReason == null;
+            return gpAllowBuild.invoke(claim, player, org.bukkit.Material.GRASS_BLOCK) == null;
 
-        } catch (Exception e) {
-            plugin.debug("GriefPrevention player check failed: " + e.getMessage());
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportFailure("GriefPrevention player check", e);
             return true;
+        }
+    }
+
+    /** Warns once per check type; the check itself falls back to its default. */
+    private void reportFailure(String check, Exception e) {
+        if (reportedFailures.add(check)) {
+            plugin.getLogger().warning(check + " failed, protection is not applied: " + e);
         }
     }
 
@@ -269,7 +284,8 @@ public class RegionIntegration {
      * <p>Sources ({@code biome.exclude.*}): rectangular areas ({@code areas}), WorldGuard
      * region IDs ({@code worldGuardRegions}, optionally {@code world:id}) and, when
      * {@code griefPreventionClaims} is set, every GriefPrevention claim. A chunk is excluded
-     * as soon as its centre or one of its corners hits an excluded area.
+     * as soon as any part of it touches one of them; for WorldGuard only the Y range that
+     * biome changes apply to counts.
      */
     public boolean isBiomeExcluded(org.bukkit.World world, int chunkX, int chunkZ) {
         org.bukkit.configuration.ConfigurationSection cfg = plugin.getConfig().getConfigurationSection("biome.exclude");
@@ -286,16 +302,11 @@ public class RegionIntegration {
         }
 
         java.util.List<String> wgRegions = cfg.getStringList("worldGuardRegions");
-        boolean gpClaims = cfg.getBoolean("griefPreventionClaims", false);
-        if ((wgRegions.isEmpty() || !worldGuardEnabled) && (!gpClaims || !griefPreventionEnabled)) return false;
-
-        int[][] samples = {{minX + 8, minZ + 8}, {minX, minZ}, {maxX, minZ}, {minX, maxZ}, {maxX, maxZ}};
-        for (int[] s : samples) {
-            Location loc = new Location(world, s[0], 64, s[1]);
-            if (worldGuardEnabled && !wgRegions.isEmpty() && isInWorldGuardRegion(loc, wgRegions)) return true;
-            if (gpClaims && griefPreventionEnabled && !checkGriefPrevention(loc)) return true;
+        if (worldGuardEnabled && !wgRegions.isEmpty() && touchesWorldGuardRegion(world, minX, minZ, maxX, maxZ, wgRegions)) {
+            return true;
         }
-        return false;
+        return griefPreventionEnabled && cfg.getBoolean("griefPreventionClaims", false)
+                && hasClaim(world, chunkX, chunkZ);
     }
 
     private static int toInt(Object o) {
@@ -303,36 +314,48 @@ public class RegionIntegration {
         try { return Integer.parseInt(String.valueOf(o).trim()); } catch (Exception e) { return 0; }
     }
 
-    /** @return {@code true} if one of the listed region IDs applies at the location */
-    private boolean isInWorldGuardRegion(Location location, java.util.List<String> regionIds) {
+    /** @return {@code true} if one of the listed regions intersects the block area */
+    private boolean touchesWorldGuardRegion(org.bukkit.World world, int minX, int minZ, int maxX, int maxZ,
+                                            java.util.List<String> regionIds) {
         try {
-            Object regionManager = regionContainer.getClass()
-                    .getMethod("get", org.bukkit.World.class)
-                    .invoke(regionContainer, location.getWorld());
-            if (regionManager == null) return false;
+            Object manager = wgGetRegionManager.invoke(regionContainer, wgAdaptWorld.invoke(null, world));
+            if (manager == null) return false;
 
-            Class<?> vector3Class = Class.forName("com.sk89q.worldedit.math.BlockVector3");
-            Object vector = vector3Class.getMethod("at", double.class, double.class, double.class)
-                    .invoke(null, location.getX(), location.getY(), location.getZ());
-            Object applicable = regionManager.getClass()
-                    .getMethod("getApplicableRegions", vector3Class)
-                    .invoke(regionManager, vector);
-            Iterable<?> regions = (Iterable<?>) applicable.getClass().getMethod("getRegions").invoke(applicable);
-            for (Object region : regions) {
-                String id = String.valueOf(region.getClass().getMethod("getId").invoke(region));
-                for (String wanted : regionIds) {
-                    String w = wanted;
-                    if (w.contains(":")) {
-                        String[] parts = w.split(":", 2);
-                        if (!parts[0].equals(location.getWorld().getName())) continue;
-                        w = parts[1];
-                    }
-                    if (w.equalsIgnoreCase(id)) return true;
+            java.util.List<Object> listed = new java.util.ArrayList<>();
+            for (String entry : regionIds) {
+                String id = entry;
+                if (id.contains(":")) {
+                    String[] parts = id.split(":", 2);
+                    if (!parts[0].equals(world.getName())) continue;
+                    id = parts[1];
                 }
+                Object region = wgGetRegion.invoke(manager, id);
+                if (region != null) listed.add(region);
+            }
+            if (listed.isEmpty()) return false;
+
+            int minY = plugin.getBiomeSnowManager().minChangeY(world);
+            int maxY = plugin.getBiomeSnowManager().maxChangeY(world) - 1;
+            Object area = wgCuboidRegion.newInstance("christmas_exclusion_check",
+                    wgVectorAt.invoke(null, (double) minX, (double) minY, (double) minZ),
+                    wgVectorAt.invoke(null, (double) maxX, (double) maxY, (double) maxZ));
+            return !((java.util.Collection<?>) wgIntersectingRegions.invoke(area, listed)).isEmpty();
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportFailure("WorldGuard exclusion check", e);
+            return false;
+        }
+    }
+
+    /** @return {@code true} if any claim of this world touches the chunk, regardless of the spawn settings */
+    private boolean hasClaim(org.bukkit.World world, int chunkX, int chunkZ) {
+        try {
+            // GriefPrevention indexes claims by chunk coordinates across all worlds
+            for (Object claim : (java.util.Collection<?>) gpGetClaimsInChunk.invoke(gpDataStore, chunkX, chunkZ)) {
+                if (world.equals(((Location) gpLesserCorner.invoke(claim)).getWorld())) return true;
             }
             return false;
-        } catch (Exception e) {
-            plugin.debug("WorldGuard exclusion check failed: " + e.getMessage());
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            reportFailure("GriefPrevention exclusion check", e);
             return false;
         }
     }

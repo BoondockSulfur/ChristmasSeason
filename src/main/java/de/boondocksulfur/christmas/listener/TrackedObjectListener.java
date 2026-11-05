@@ -1,7 +1,6 @@
 package de.boondocksulfur.christmas.listener;
 
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.Item;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkLoadEvent;
@@ -33,32 +32,18 @@ public class TrackedObjectListener implements Listener {
     public void onEntitiesLoad(EntitiesLoadEvent e) {
         boolean active = plugin.isActive();
         for (Entity entity : e.getEntities()) {
-            if (plugin.getWichtelManager().isEventMob(entity)) {
-                if (active) plugin.getWichtelManager().adopt(entity);
-                else remove(entity);
-            } else if (plugin.getSnowmanManager().isEventSnowman(entity)) {
-                if (active) plugin.getSnowmanManager().adopt(entity);
-                else remove(entity);
-            } else if (plugin.getDecorationManager().isDecoration(entity)) {
-                if (active) plugin.getDecorationManager().adopt((Item) entity);
-                else remove(entity);
-            }
+            plugin.getLoadedObjectSync().syncEntity(entity, active);
         }
     }
 
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent e) {
-        if (!plugin.getConfig().getBoolean("gifts.enabled", true)) return;
+        // A freshly generated chunk cannot contain gifts
+        if (e.isNewChunk() || !plugin.getConfig().getBoolean("gifts.enabled", true)) return;
         if (plugin.isActive()) {
             plugin.getGiftManager().adoptInChunk(e.getChunk());
         } else {
             plugin.getGiftManager().removeInChunk(e.getChunk());
         }
-    }
-
-    private void remove(Entity entity) {
-        entity.remove();
-        plugin.debug("Removed orphaned event object: " + entity.getType()
-                + " @ " + entity.getLocation().getBlockX() + "," + entity.getLocation().getBlockZ());
     }
 }

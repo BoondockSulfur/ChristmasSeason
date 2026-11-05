@@ -8,6 +8,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -21,8 +25,8 @@ import java.util.*;
  *   <li>EMERGENCY - written on plugin disable while the event is still active; rotated</li>
  * </ul>
  *
- * <p>The database runs in WAL mode, so every copy first forces a checkpoint - otherwise
- * the copy would miss all chunks still sitting in the write-ahead log.
+ * <p>Copies go through {@code VACUUM INTO}: it reads a consistent state including the
+ * write-ahead log, also while chunks are being written, so backups can run off the main thread.
  */
 public class BiomeSnapshotBackup {
 
@@ -44,7 +48,7 @@ public class BiomeSnapshotBackup {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
 
-        String worldName = plugin.getConfig().getString("snowWorld", "world");
+        String worldName = plugin.getPrimarySnowWorld();
         org.bukkit.World world = Bukkit.getWorld(worldName);
         File worldFolder = world != null ? world.getWorldFolder() : new File(worldName);
         this.backupDir = new File(worldFolder, "christmas_backups");
@@ -60,18 +64,32 @@ public class BiomeSnapshotBackup {
     // ---------------------------------------------------------------- copying
 
     /**
-     * Copies the database file to {@code target}, flushing the WAL first.
-     *
-     * <p>If the manager currently holds the database open, the checkpoint runs through
-     * that connection. Otherwise a short-lived connection is opened so that a WAL file
-     * left behind by a crash is merged into the main file before copying.
+     * Writes a consistent copy of the database to {@code target}. The previous file is only
+     * replaced once the copy is complete. A database SQLite cannot read is copied as a plain
+     * file, so that even a damaged state is preserved.
      */
     private void copyDatabase(File target) throws IOException {
-        flushWriteAheadLog();
-        Files.copy(dbFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        File temp = new File(target.getPath() + ".tmp");
+        Files.deleteIfExists(temp.toPath());
+        try {
+            Class.forName("org.sqlite.JDBC");
+            try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+                 Statement stmt = connection.createStatement()) {
+                stmt.execute("VACUUM INTO '" + temp.getAbsolutePath().replace("'", "''") + "'");
+            }
+            Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (SQLException | ClassNotFoundException e) {
+            plugin.debug("VACUUM INTO failed, copying the file: " + e.getMessage());
+            Files.deleteIfExists(temp.toPath());
+            flushWriteAheadLog();
+            Files.copy(dbFile.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
-    /** Ensures the main database file contains everything (see class Javadoc). */
+    /**
+     * Merges the write-ahead log into the main database file. If the database is closed, a
+     * short-lived connection handles a WAL file left behind by a crash.
+     */
     private void flushWriteAheadLog() {
         BiomeSnowManager manager = plugin.getBiomeSnowManager();
         BiomeSnapshotDatabase open = manager != null ? manager.getDatabase() : null;
@@ -103,7 +121,7 @@ public class BiomeSnapshotBackup {
      *
      * @return {@code true} on success, {@code false} if there is no database or the copy failed
      */
-    public boolean createSafeBackup() {
+    public synchronized boolean createSafeBackup() {
         if (!dbFile.exists()) {
             plugin.debug("No SAFE backup created - database does not exist yet");
             return false;
@@ -125,7 +143,7 @@ public class BiomeSnapshotBackup {
      *
      * @return {@code true} on success
      */
-    public boolean createTimestampBackup() {
+    public synchronized boolean createTimestampBackup() {
         if (!dbFile.exists()) {
             plugin.debug("No timestamp backup created - database does not exist");
             return false;
@@ -152,7 +170,7 @@ public class BiomeSnapshotBackup {
      *
      * @return {@code true} on success
      */
-    public boolean createEmergencyBackup() {
+    public synchronized boolean createEmergencyBackup() {
         if (!dbFile.exists()) {
             return false;
         }
@@ -270,9 +288,14 @@ public class BiomeSnapshotBackup {
      *
      * @return {@code true} on success
      */
-    public boolean restoreBackup(File backupFile) {
+    public synchronized boolean restoreBackup(File backupFile) {
         if (!backupFile.exists()) {
             lang.logWarning("log.backup.file-not-found", backupFile.getName());
+            return false;
+        }
+
+        if (plugin.getBiomeSnowManager().isRestoring()) {
+            lang.logWarning("log.biome.restore-already-running");
             return false;
         }
 
@@ -298,16 +321,19 @@ public class BiomeSnapshotBackup {
 
             Files.copy(backupFile.toPath(), dbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             lang.logInfo("log.backup.restored", backupFile.getName(), dbFile.length() / 1024);
-
-            if (plugin.isActive() && plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-                plugin.getBiomeSnowManager().start();
-                lang.logInfo("log.backup.database-reopened");
-            }
             return true;
         } catch (IOException e) {
             lang.logSevere("log.backup.error-restoring", e.getMessage());
             if (plugin.isDebugMode()) e.printStackTrace();
             return false;
+        } finally {
+            if (plugin.isActive() && plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
+                BiomeSnowManager manager = plugin.getBiomeSnowManager();
+                manager.start();
+                // stop() cancelled the per-player timers on Folia, start() does not recreate them
+                Bukkit.getOnlinePlayers().forEach(manager::startPlayerTracking);
+                lang.logInfo("log.backup.database-reopened");
+            }
         }
     }
 
@@ -316,7 +342,7 @@ public class BiomeSnapshotBackup {
      *
      * @return number of deleted files
      */
-    public int clearAllBackups() {
+    public synchronized int clearAllBackups() {
         int deleted = 0;
         for (File backup : listTimestampBackups()) {
             if (backup.delete()) deleted++;

@@ -16,10 +16,12 @@ public class SnowstormManager {
 
     private final ChristmasSeason plugin;
     private final FoliaSchedulerHelper scheduler;
-    private WrappedTask enforceTask, autoTask;
+    private WrappedTask enforceTask, autoTask, pulseTask;
     private volatile boolean desiredStorm = true;
     /** Stops the recursive auto-toggle chain reliably after stop(). */
     private volatile boolean autoRunning = false;
+    /** State to return to when the running pulse ends. */
+    private volatile boolean pulseResumesAuto, pulseRestoresStorm;
 
     public SnowstormManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -45,20 +47,35 @@ public class SnowstormManager {
         int interval = Math.max(20, plugin.getConfig().getInt("snowstorm.forceWeatherTicks", 200));
         enforceTask = scheduler.runGlobalTaskTimer(this::enforce, 20L, interval);
 
-        if ("auto".equalsIgnoreCase(mode)) startAuto();
+        if ("auto".equalsIgnoreCase(mode)) startAuto(true);
     }
 
     public void stop() {
         autoRunning = false;
         if (enforceTask != null) { enforceTask.cancel(); enforceTask = null; }
         if (autoTask != null)     { autoTask.cancel();     autoTask = null; }
+        cancelPulse();
     }
 
-    private void startAuto() {
+    private void cancelPulse() {
+        if (pulseTask != null) { pulseTask.cancel(); pulseTask = null; }
+    }
+
+    private void pauseAuto() {
+        autoRunning = false;
+        if (autoTask != null) { autoTask.cancel(); autoTask = null; }
+    }
+
+    /** @return {@code true} if the running manager is configured for alternating phases */
+    private boolean isAutoMode() {
+        return enforceTask != null && "auto".equalsIgnoreCase(plugin.getConfig().getString("snowstorm.mode", "manual"));
+    }
+
+    private void startAuto(boolean startWithStorm) {
         final int onSec  = Math.max(5, plugin.getConfig().getInt("snowstorm.auto.onSeconds", 150));
         final int offSec = Math.max(5, plugin.getConfig().getInt("snowstorm.auto.offSeconds", 45));
         autoRunning = true;
-        scheduleAutoToggle(true, onSec, offSec);
+        scheduleAutoToggle(startWithStorm, onSec, offSec);
     }
 
     /** Applies the current phase and schedules the next toggle (one delayed task instead of a per-tick timer). */
@@ -92,14 +109,19 @@ public class SnowstormManager {
     // ----------------------------------------------------------- public API
 
     /**
-     * Manual override. {@code false} also pauses the auto phases until {@code /xmas storm on}
-     * or the next start/reload, otherwise the next phase would switch the storm back on.
+     * Manual override, ends a running pulse. {@code false} also pauses the auto phases until
+     * {@code /xmas storm on} or the next start/reload, otherwise the next phase would switch
+     * the storm back on; {@code true} resumes them.
      */
     public void setStorm(boolean on) {
+        cancelPulse();
         if (!on && autoRunning) {
-            autoRunning = false;
-            if (autoTask != null) { autoTask.cancel(); autoTask = null; }
+            pauseAuto();
             plugin.debug("Snowstorm auto mode paused by manual off");
+        } else if (on && !autoRunning && isAutoMode()) {
+            startAuto(true);
+            plugin.debug("Snowstorm auto mode resumed");
+            return;
         }
         desiredStorm = on;
         scheduler.runGlobalTask(this::enforce);
@@ -107,10 +129,30 @@ public class SnowstormManager {
     public boolean toggleStorm() { setStorm(!desiredStorm); return desiredStorm; }
     public boolean isStorm() { return desiredStorm; }
 
-    /** Storm for {@code seconds}, then clear. */
+    /**
+     * Storm for {@code seconds}, then back to the previous state: the auto phases continue with
+     * a clear phase, otherwise the weather returns to what the manager kept before. A pulse
+     * during a pulse only extends it.
+     */
     public void pulse(int seconds) {
-        setStorm(true);
-        scheduler.runGlobalTaskLater(() -> setStorm(false), seconds * 20L);
+        if (pulseTask == null) {
+            pulseResumesAuto = autoRunning;
+            pulseRestoresStorm = enforceTask != null && !autoRunning && desiredStorm;
+        }
+        cancelPulse();
+        pauseAuto();
+        desiredStorm = true;
+        scheduler.runGlobalTask(this::enforce);
+
+        pulseTask = scheduler.runGlobalTaskLater(() -> {
+            pulseTask = null;
+            if (pulseResumesAuto && enforceTask != null) {
+                startAuto(false);
+            } else {
+                desiredStorm = pulseRestoresStorm;
+                enforce();
+            }
+        }, seconds * 20L);
     }
 
     /** Clears the weather for five minutes; global scheduler only. */

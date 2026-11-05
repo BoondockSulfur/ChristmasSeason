@@ -47,6 +47,7 @@ public class ChristmasSeason extends JavaPlugin {
     private RegionIntegration regionIntegration;
     private EventController eventController;
     private LootManager lootManager;
+    private LoadedObjectSync loadedObjectSync;
     private StatsManager statsManager;
     private AdventManager adventManager;
     private PlaceholderIntegration placeholderIntegration;
@@ -72,6 +73,7 @@ public class ChristmasSeason extends JavaPlugin {
         this.giftManager       = new GiftManager(this);
         this.wichtelManager    = new WichtelManager(this);
         this.snowmanManager    = new SnowmanManager(this);
+        this.loadedObjectSync  = new LoadedObjectSync(this);
         this.regionIntegration = new RegionIntegration(this);
         this.eventController   = new EventController(this);
         this.lootManager       = new LootManager(this);
@@ -115,6 +117,7 @@ public class ChristmasSeason extends JavaPlugin {
         boolean wasActive = isActive();
 
         if (eventController != null) eventController.stopSchedule();
+        if (loadedObjectSync != null) loadedObjectSync.cancel();
         if (statsManager != null) statsManager.save();
         if (adventManager != null) adventManager.save();
         if (placeholderIntegration != null) {
@@ -155,10 +158,7 @@ public class ChristmasSeason extends JavaPlugin {
         }
 
         // Objects that survived a restart or reload get their tracking, caps and lifetimes back
-        giftManager.adoptLoaded();
-        decorationManager.adoptLoaded();
-        wichtelManager.adoptLoaded();
-        snowmanManager.adoptLoaded();
+        loadedObjectSync.start();
     }
 
     /** Starts the per-player timers (biome bubble, spawns) for one player. */
@@ -349,11 +349,28 @@ public class ChristmasSeason extends JavaPlugin {
         }
 
         if (dbFile.exists()) {
-            try {
-                Class.forName("org.sqlite.JDBC");
-                try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
-                     java.sql.Statement stmt = conn.createStatement();
-                     java.sql.ResultSet rs = stmt.executeQuery("PRAGMA integrity_check")) {
+            boolean active = isActive();
+            foliaScheduler.runAsync(() -> checkDatabase(dbFile, active));
+        }
+
+        if (backupManager != null) {
+            int emergencyCount = backupManager.listEmergencyBackups().size();
+            if (emergencyCount > 0) {
+                languageManager.logWarning("log.startup.separator");
+                languageManager.logWarning("log.startup.emergency-found-1", emergencyCount);
+                languageManager.logWarning("log.startup.emergency-found-2");
+                languageManager.logWarning("log.startup.separator");
+            }
+        }
+    }
+
+    /** Integrity check plus a hint about snapshots an interrupted restore left behind; runs off the main thread. */
+    private void checkDatabase(File dbFile, boolean active) {
+        try {
+            Class.forName("org.sqlite.JDBC");
+            try (java.sql.Connection conn = java.sql.DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+                 java.sql.Statement stmt = conn.createStatement()) {
+                try (java.sql.ResultSet rs = stmt.executeQuery("PRAGMA integrity_check")) {
                     if (rs.next()) {
                         String result = rs.getString(1);
                         if (!"ok".equalsIgnoreCase(result)) {
@@ -367,19 +384,19 @@ public class ChristmasSeason extends JavaPlugin {
                         }
                     }
                 }
-            } catch (Exception e) {
-                languageManager.logSevere("log.startup.db-check-failed", e.getMessage());
+                if (!active) {
+                    try (java.sql.ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM chunks")) {
+                        if (rs.next() && rs.getInt(1) > 0) {
+                            languageManager.logWarning("log.startup.separator");
+                            languageManager.logWarning("log.startup.restore-unfinished-1", rs.getInt(1));
+                            languageManager.logWarning("log.startup.restore-unfinished-2");
+                            languageManager.logWarning("log.startup.separator");
+                        }
+                    }
+                }
             }
-        }
-
-        if (backupManager != null) {
-            int emergencyCount = backupManager.listEmergencyBackups().size();
-            if (emergencyCount > 0) {
-                languageManager.logWarning("log.startup.separator");
-                languageManager.logWarning("log.startup.emergency-found-1", emergencyCount);
-                languageManager.logWarning("log.startup.emergency-found-2");
-                languageManager.logWarning("log.startup.separator");
-            }
+        } catch (Exception e) {
+            languageManager.logSevere("log.startup.db-check-failed", e.getMessage());
         }
     }
 
@@ -403,6 +420,7 @@ public class ChristmasSeason extends JavaPlugin {
     public FoliaSchedulerHelper getFoliaScheduler() { return foliaScheduler; }
     public LanguageManager getLanguageManager() { return languageManager; }
     public BiomeSnapshotBackup getBackupManager() { return backupManager; }
+    public LoadedObjectSync getLoadedObjectSync() { return loadedObjectSync; }
     public UpdateChecker getUpdateChecker() { return updateChecker; }
     public BiomeCompare getBiomeCompare() { return biomeCompare; }
     public RegionIntegration getRegionIntegration() { return regionIntegration; }

@@ -45,7 +45,7 @@ public class SnowmanManager {
         plugin.debug("SnowmanManager started (per-player spawns, per-entity AI)");
     }
 
-    /** Stops spawn and attack timers; tracking is kept and re-armed by {@link #adoptLoaded()}. */
+    /** Stops spawn and attack timers; tracking is kept and re-armed by {@link LoadedObjectSync}. */
     public void stop() {
         for (WrappedTask task : playerSpawnTasks.values()) {
             if (task != null) task.cancel();
@@ -115,18 +115,7 @@ public class SnowmanManager {
         }
     }
 
-    /** Scans all loaded chunks of the snow worlds and adopts tagged snow golems. */
-    public void adoptLoaded() {
-        for (World w : plugin.getSnowWorlds()) {
-            scheduler.forEachLoadedChunk(w, chunk -> {
-                for (Entity e : chunk.getEntities()) {
-                    if (isEventSnowman(e)) adopt(e);
-                }
-            });
-        }
-    }
-
-    /** Removes all snow golems ({@code /xmas off}): tracked ones plus untracked ones in loaded chunks. */
+    /** Removes all tracked snow golems ({@code /xmas off}); untracked ones are found by {@link LoadedObjectSync}. */
     public void cleanup() {
         int removed = 0;
         int tracked = trackedSnowmen.size();
@@ -145,14 +134,6 @@ public class SnowmanManager {
                 removed++;
             }
             it.remove();
-        }
-
-        for (World w : plugin.getSnowWorlds()) {
-            scheduler.forEachLoadedChunk(w, chunk -> {
-                for (Entity e : chunk.getEntities()) {
-                    if (isEventSnowman(e)) e.remove();
-                }
-            });
         }
 
         lang.logInfo("log.cleanup.snowmen", removed);
