@@ -194,7 +194,7 @@ advent:
   invalid-day: "&cBitte einen Tag zwischen {0} und {1} wählen."
   future-day: "&cTürchen {0} ist noch nicht offen - Geduld!"
   no-catch-up: "&cVerpasste Türchen können auf diesem Server nicht nachgeholt werden."
-  already-claimed: "&eTürchen {0} hast du heute schon geöffnet."
+  already-claimed: "&eTürchen {0} hast du schon geöffnet."
   claimed: "&a🎄 Türchen {0} geöffnet! &7Deine Belohnung liegt im Inventar."
   broadcast: "&a🎄 &e{0} &ahat Türchen &e{1} &ades Adventskalenders geöffnet!"
   status-header: "&6═══ Adventskalender &7({0}/{1} Türchen geöffnet) ═══"

@@ -24,7 +24,7 @@ command:
     cleanup: "&7Etkinlik varlıkları, eşyaları ve hediye sandıkları kaldırılıyor..."
     success: "&cEtkinlik kapatıldı. &7(Biyomlar ve kar parça parça geri yükleniyor)"
     backup-failed: "&c&lUYARI: Zaman damgalı yedek başarısız! &7Geri yükleme yine de devam ediyor."
-    already-inactive: "&eChristmasSeason zaten kapalı. &7Önceki bir geri yüklemeden kalan anlık görüntüler varsa yeniden işleniyor."
+    already-inactive: "&eChristmasSeason zaten kapalı. &7Önceki bir geri yüklemeden kalan anlık görüntüler varsa yeniden sıfırlanır."
 
   status:
     message: "&bDurum: {0} &7| Kar fırtınası: {1}"
@@ -55,12 +55,12 @@ command:
       success: "&aBiyom ayarlandı: &e{0} &7chunk planlandı."
 
     restore:
-      disabled: "&c&lBu komut devre dışı &7(sunucuyu dondurabiliyordu). Biyomları geri yüklemek için '/xmas off' kullan."
+      disabled: "&c&lBu komut devre dışı &7(sunucunun donmasına neden olabilir). Biyomları geri yüklemek için '/xmas off' kullan."
 
     clearsnap:
       success: "&aAnlık görüntü silindi."
       failed: "&cAnlık görüntü silinemedi. &7Ayrıntılar konsolda."
-      blocked-active: "&c&lHATA: ChristmasSeason açık! &7Biyomlar değişmişken anlık görüntüyü silmek orijinalleri kalıcı olarak kaybettirir. Önce '/xmas off' çalıştır."
+      blocked-active: "&c&lHATA: ChristmasSeason açık! &7Biyomlar değiştirilmişken anlık görüntüyü silmek, orijinal biyomların kalıcı olarak kaybolmasına neden olur. Önce '/xmas off' çalıştır."
       no-backup: "&c&lUYARI: Hiç yedek yok! &7Önce bir tane oluştur: '/xmas backup create'"
 
     status:
@@ -127,7 +127,7 @@ command:
     toggle: "&bKar fırtınası: {0}"
     status: "&bKar fırtınası: {0}"
     pulse:
-      success: "&bKar fırtınası: &e{0}&7 sn'lik darbe."
+      success: "&bKar fırtınası: &e{0}&7 saniyelik dalga."
       invalid-duration: "&cGeçersiz saniye sayısı."
       world-not-found: "&cHedef dünya bulunamadı."
 
@@ -161,7 +161,7 @@ command:
   stats:
     header: "&6═══ Hediye istatistikleri &7(toplam açılan: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7hediye açıldı, &e{2} &7advent kapısı"
+    player: "&7{0}: &e{1} &7hediye ve &e{2} &7Advent takvimi kapısı açtı"
     unknown-player: "&cBilinmeyen oyuncu: &f{0}"
 
 # Komutlar - /xmasgift
@@ -172,7 +172,7 @@ gift:
 
 # Varlık ve eşya adları
 entity:
-  wichtel: "&aCüce"
+  wichtel: "&aNoel cücesi"
   elf: "&bElf"
   snowman: "&fKardan adam"
   decoration: "&aNoel süsü"
@@ -182,17 +182,17 @@ entity:
 broadcast:
   gift-spawned: "&c🎁 &e{0} &cdünyasında &e{1} {2} {3} &ckonumunda bir Noel hediyesi belirdi!"
   gift-opened: "&a🎁 &e{0}&a, &e{1} {2} {3} &akonumunda bir Noel hediyesi açtı!"
-  event-activated: "&b❄ &fNoel sezonu başladı! &7Kar, hediyeler ve neşeli bir topluluk seni bekliyor."
+  event-activated: "&b❄ &fNoel sezonu başladı! &7Kar, hediyeler ve neşeli dostlar seni bekliyor."
   event-deactivated: "&b❄ &fNoel sezonu sona erdi. &7Bizimle kutladığın için teşekkürler!"
 
 # Advent takvimi
 advent:
   usage: "&b/advent &7[status|<gün>]"
   disabled: "&cAdvent takvimi devre dışı."
-  event-inactive: "&cAdvent takvimi yalnızca Noel etkinliği sırasında kullanılabilir."
+  event-inactive: "&cAdvent takvimi yalnızca Noel etkinliği aktifken kullanılabilir."
   not-in-season: "&cAdvent takvimi {0}.{1}. ile {2}.{3}. arasında açık."
   invalid-day: "&cLütfen {0} ile {1} arasında bir gün seç."
-  future-day: "&c{0}. kapı henüz açılmadı - sabırlı ol!"
+  future-day: "&c{0}. kapı henüz açılamaz - sabırlı ol!"
   no-catch-up: "&cBu sunucuda kaçırılan kapılar sonradan açılamaz."
   already-claimed: "&e{0}. kapıyı zaten açtın."
   claimed: "&a🎄 {0}. kapı açıldı! &7Ödülün envanterinde."

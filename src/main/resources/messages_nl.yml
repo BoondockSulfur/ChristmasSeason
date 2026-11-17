@@ -21,10 +21,10 @@ command:
     snapshot-disabled: "&c&lLET OP: het snapshotsysteem is uitgeschakeld (enableSnapshot: false)! &cBiomen worden ZONDER back-up gewijzigd - geen automatisch herstel mogelijk."
 
   "off":
-    cleanup: "&7Evenementwezens, items en cadeaukisten worden verwijderd..."
+    cleanup: "&7Entiteiten, voorwerpen en cadeaukisten van het evenement worden verwijderd..."
     success: "&cEvenement gedeactiveerd. &7(Biomen en sneeuw worden in delen hersteld)"
     backup-failed: "&c&lLET OP: back-up met tijdstempel mislukt! &7Het herstel gaat toch door."
-    already-inactive: "&eChristmasSeason staat al uit. &7Snapshots die een eerder herstel heeft achtergelaten, worden opnieuw verwerkt als die er zijn."
+    already-inactive: "&eChristmasSeason staat al uit. &7Eventuele snapshots van een eerdere herstelactie worden opnieuw gereset."
 
   status:
     message: "&bStatus: {0} &7| Sneeuwstorm: {1}"
@@ -33,7 +33,7 @@ command:
     region: "&7Regiobescherming: &f{0}"
     restoring: "&eBioomherstel bezig: &f{0}"
     worlds: "&7Sneeuwwerelden: &f{0}"
-    objects: "&7Gevolgd: &f{0} &7cadeaukisten, &f{1} &7versieringen, &f{2} &7kabouters/elfen, &f{3} &7sneeuwpoppen"
+    objects: "&7Bijgehouden: &f{0} &7cadeaukisten, &f{1} &7versieringen, &f{2} &7kabouters/elfen, &f{3} &7sneeuwpoppen"
     snapshot: "&7Chunks in snapshot: &f{0}"
     converting: "&eWereldomzetting bezig: &f{0}"
     schedule: "&7Planning: &f{0} &7dagen tot de start, nog &f{1} &7dagen"
@@ -86,8 +86,8 @@ command:
       footer: "&6═══════════════════════════"
 
     fix-diff:
-      usage: "&b/xmas biome fix-diff &e<back-up-ID> &7[confirm] - herstelt verschillende chunks uit een back-up"
-      warning: "&c&lLET OP: &7alle verschillende chunks worden overschreven met de biomen uit de back-up!"
+      usage: "&b/xmas biome fix-diff &e<back-up-ID> &7[confirm] - herstelt chunks met afwijkingen vanuit een back-up"
+      warning: "&c&lLET OP: &7alle chunks met afwijkingen worden overschreven met de biomen uit de back-up!"
       confirm: "&eBevestig met: &f/xmas biome fix-diff {0} confirm"
       running: "&7Verschillen worden hersteld... &7Dit kan een paar minuten duren."
       done: "&a✓ Herstel voltooid! &7Hersteld: &f{0} &7chunks"
@@ -151,7 +151,7 @@ command:
     clear-confirm: "&c&lLET OP: &7dit verwijdert &f{0} &7back-up(s) met tijdstempel en noodback-up(s) (SAFE blijft). Bevestig met: &f/xmas backup clear confirm"
 
   feature:
-    usage: "&b/xmas feature &e<naam> <on|off> &7- schakelt een functie tijdens het draaien (opgeslagen in config.yml)"
+    usage: "&b/xmas feature &e<naam> <on|off> &7- schakelt een functie direct in of uit (wordt opgeslagen in config.yml)"
     unknown: "&cOnbekende functie: &f{0}"
     status-on: "&7Functie &f{0}&7: &aingeschakeld"
     status-off: "&7Functie &f{0}&7: &cuitgeschakeld"
@@ -161,14 +161,14 @@ command:
   stats:
     header: "&6═══ Cadeaustatistieken &7(totaal geopend: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7cadeaus geopend, &e{2} &7adventsdeurtjes"
+    player: "&7{0}: &e{1} &7cadeaus geopend, &e{2} &7adventsdeurtjes geopend"
     unknown-player: "&cOnbekende speler: &f{0}"
 
 # Commando's - /xmasgift
 gift:
   spawned: "&aCadeau geplaatst!"
   spawn-failed: "&cHier is geen cadeau geplaatst &7(er staat een andere kist naast)."
-  opened: "&a🎁 Vrolijk kerstfeest! &7Je hebt tot nu toe &e{0} &7cadeau(s) geopend."
+  opened: "&a🎁 Vrolijk kerstfeest! &7Aantal cadeaus dat je tot nu toe hebt geopend: &e{0}&7."
 
 # Namen van wezens en items
 entity:
@@ -180,8 +180,8 @@ entity:
 
 # Mededelingen
 broadcast:
-  gift-spawned: "&c🎁 Er is een kerstcadeau verschenen in &e{0} &cop &e{1} {2} {3}&c!"
-  gift-opened: "&a🎁 &e{0} &aheeft een kerstcadeau geopend op &e{1} {2} {3}&a!"
+  gift-spawned: "&c🎁 Er is een kerstcadeau verschenen in wereld &e{0} &cop de coördinaten &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 &e{0} &aheeft een kerstcadeau geopend op de coördinaten &e{1} {2} {3}&a!"
   event-activated: "&b❄ &fHet kerstseizoen is begonnen! &7Sneeuw, cadeaus en gezelligheid wachten op je."
   event-deactivated: "&b❄ &fHet kerstseizoen is voorbij. &7Bedankt voor het meevieren!"
 
@@ -189,7 +189,7 @@ broadcast:
 advent:
   usage: "&b/advent &7[status|<dag>]"
   disabled: "&cDe adventskalender is uitgeschakeld."
-  event-inactive: "&cDe adventskalender is alleen beschikbaar tijdens het kerstevenement."
+  event-inactive: "&cDe adventskalender is alleen beschikbaar zolang het kerstevenement actief is."
   not-in-season: "&cDe adventskalender loopt van {0}.{1}. tot {2}.{3}."
   invalid-day: "&cKies een dag tussen {0} en {1}."
   future-day: "&cDeurtje {0} is nog niet open - geduld!"

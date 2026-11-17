@@ -74,7 +74,10 @@ public class BiomeCompare {
             if (!completed) return null;
 
             lang.logInfo("log.compare.complete", compared.get(), identical.get(), differences.size());
-            return new CompareResult(backupFile, compared.get(), identical.get(), new ArrayList<>(differences));
+            // Most differing chunks first: the command shows the top entries of this list
+            List<ChunkDifference> sorted = new ArrayList<>(differences);
+            sorted.sort(Comparator.comparingInt((ChunkDifference d) -> d.differenceCount).reversed());
+            return new CompareResult(backupFile, compared.get(), identical.get(), sorted);
 
         } catch (SQLException e) {
             lang.logSevere("log.compare.error", e.getMessage());

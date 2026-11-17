@@ -24,7 +24,7 @@ command:
     cleanup: "&7Suppression des entités, objets et coffres cadeaux de l'événement..."
     success: "&cÉvénement désactivé. &7(Les biomes et la neige sont restaurés par lots)"
     backup-failed: "&c&lATTENTION : la sauvegarde horodatée a échoué ! &7La restauration continue malgré tout."
-    already-inactive: "&eChristmasSeason est déjà désactivé. &7Les snapshots laissés par une restauration précédente sont de nouveau traités, s'il y en a."
+    already-inactive: "&eChristmasSeason est déjà désactivé. &7Les éventuels snapshots laissés par une restauration précédente sont de nouveau réinitialisés."
 
   status:
     message: "&bStatut : {0} &7| Tempête de neige : {1}"
@@ -80,7 +80,7 @@ command:
       compared: "&7Chunks comparés : &f{0}"
       identical: "&7Identiques : &a{0} &7({1} %)"
       differences: "&7Différents : &c{0}"
-      top-header: "&7Top 5 des chunks avec différences :"
+      top-header: "&7Les 5 chunks présentant le plus de différences :"
       top-entry: "&7  {0}. &fChunk[{1}, {2}] &7- &c{3} &7cellules"
       fix-hint: "&eCorriger : &f/xmas biome fix-diff {0}"
       footer: "&6═══════════════════════════"
@@ -151,7 +151,7 @@ command:
     clear-confirm: "&c&lATTENTION : &7cela supprime &f{0} &7sauvegarde(s) horodatée(s) et d'urgence (SAFE est conservée). Confirmez avec : &f/xmas backup clear confirm"
 
   feature:
-    usage: "&b/xmas feature &e<nom> <on|off> &7- active/désactive une fonction en direct (enregistré dans config.yml)"
+    usage: "&b/xmas feature &e<nom> <on|off> &7- active/désactive une fonction sans redémarrage (modification enregistrée dans config.yml)"
     unknown: "&cFonction inconnue : &f{0}"
     status-on: "&7Fonction &f{0}&7 : &aactivée"
     status-off: "&7Fonction &f{0}&7 : &cdésactivée"
@@ -161,14 +161,14 @@ command:
   stats:
     header: "&6═══ Statistiques des cadeaux &7(ouverts au total : &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0} : &e{1} &7cadeaux ouverts, &e{2} &7cases du calendrier"
+    player: "&7{0} : &e{1} &7cadeaux ouverts, &e{2} &7cases du calendrier de l'Avent ouvertes"
     unknown-player: "&cJoueur inconnu : &f{0}"
 
 # Commandes - /xmasgift
 gift:
   spawned: "&aCadeau placé !"
   spawn-failed: "&cAucun cadeau placé ici &7(un autre coffre est adjacent)."
-  opened: "&a🎁 Joyeux Noël ! &7Vous avez ouvert &e{0} &7cadeau(x) jusqu'ici."
+  opened: "&a🎁 Joyeux Noël ! &7Nombre de cadeaux que vous avez ouverts jusqu'ici : &e{0}&7."
 
 # Noms des entités et objets
 entity:
@@ -180,8 +180,8 @@ entity:
 
 # Annonces
 broadcast:
-  gift-spawned: "&c🎁 Un cadeau de Noël est apparu dans &e{0} &cen &e{1} {2} {3}&c !"
-  gift-opened: "&a🎁 &e{0} &aa ouvert un cadeau de Noël en &e{1} {2} {3}&a !"
+  gift-spawned: "&c🎁 Un cadeau de Noël est apparu dans le monde &e{0} &caux coordonnées &e{1} {2} {3}&c !"
+  gift-opened: "&a🎁 &e{0} &aa ouvert un cadeau de Noël aux coordonnées &e{1} {2} {3}&a !"
   event-activated: "&b❄ &fLa saison de Noël a commencé ! &7Neige, cadeaux et bonne compagnie vous attendent."
   event-deactivated: "&b❄ &fLa saison de Noël est terminée. &7Merci d'avoir fêté avec nous !"
 
@@ -189,7 +189,7 @@ broadcast:
 advent:
   usage: "&b/advent &7[status|<jour>]"
   disabled: "&cLe calendrier de l'Avent est désactivé."
-  event-inactive: "&cLe calendrier de l'Avent n'est disponible que pendant l'événement de Noël."
+  event-inactive: "&cLe calendrier de l'Avent n'est disponible que lorsque l'événement de Noël est actif."
   not-in-season: "&cLe calendrier de l'Avent va du {0}.{1}. au {2}.{3}."
   invalid-day: "&cVeuillez choisir un jour entre {0} et {1}."
   future-day: "&cLa case {0} n'est pas encore ouverte - patience !"

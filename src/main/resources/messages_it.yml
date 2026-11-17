@@ -21,10 +21,10 @@ command:
     snapshot-disabled: "&c&lATTENZIONE: il sistema di snapshot è disattivato (enableSnapshot: false)! &cI biomi vengono modificati SENZA backup - nessun ripristino automatico possibile."
 
   "off":
-    cleanup: "&7Rimozione di creature, oggetti e bauli regalo dell'evento..."
+    cleanup: "&7Rimozione di entità, oggetti e bauli regalo dell'evento..."
     success: "&cEvento disattivato. &7(Biomi e neve vengono ripristinati a blocchi)"
     backup-failed: "&c&lATTENZIONE: backup con data non riuscito! &7Il ripristino prosegue comunque."
-    already-inactive: "&eChristmasSeason è già disattivato. &7Gli snapshot lasciati da un ripristino precedente vengono rielaborati, se presenti."
+    already-inactive: "&eChristmasSeason è già disattivato. &7Gli eventuali snapshot rimasti da un ripristino precedente vengono nuovamente reimpostati."
 
   status:
     message: "&bStato: {0} &7| Tempesta di neve: {1}"
@@ -95,8 +95,8 @@ command:
 
     info:
       header: "&6═══ Info bioma in &f{0} {1} {2} &6═══"
-      current: "&7Bioma attuale: &f{0} &7- innevato per natura: {1}&7, ghiacciato per natura: {2}"
-      original: "&7Originale (snapshot): &f{0} &7- innevato per natura: {1}&7, ghiacciato per natura: {2}"
+      current: "&7Bioma attuale: &f{0} &7- naturalmente innevato: {1}&7, naturalmente ghiacciato: {2}"
+      original: "&7Originale (snapshot): &f{0} &7- naturalmente innevato: {1}&7, naturalmente ghiacciato: {2}"
       no-snapshot: "&7Nessuno snapshot per questo chunk &8(mai convertito, oppure ripristinato e cancellato)"
       flags: "&7Escluso: {0} &7| elaborato in questa sessione: {1} &7| impostato a mano: {2}"
       range: "&7Intervallo Y configurato: &f{0} &7- &f{1}"
@@ -151,7 +151,7 @@ command:
     clear-confirm: "&c&lATTENZIONE: &7verranno eliminati &f{0} &7backup con data e di emergenza (SAFE resta). Conferma con: &f/xmas backup clear confirm"
 
   feature:
-    usage: "&b/xmas feature &e<nome> <on|off> &7- attiva/disattiva una funzione a caldo (salvato in config.yml)"
+    usage: "&b/xmas feature &e<nome> <on|off> &7- attiva/disattiva una funzione durante l'esecuzione (modifica salvata in config.yml)"
     unknown: "&cFunzione sconosciuta: &f{0}"
     status-on: "&7Funzione &f{0}&7: &aattiva"
     status-off: "&7Funzione &f{0}&7: &cdisattiva"
@@ -161,14 +161,14 @@ command:
   stats:
     header: "&6═══ Statistiche regali &7(aperti in totale: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7regali aperti, &e{2} &7caselle del calendario"
+    player: "&7{0}: &e{1} &7regali aperti, &e{2} &7caselle del calendario dell'Avvento aperte"
     unknown-player: "&cGiocatore sconosciuto: &f{0}"
 
 # Comandi - /xmasgift
 gift:
   spawned: "&aRegalo piazzato!"
   spawn-failed: "&cNessun regalo piazzato qui &7(c'è un altro baule accanto)."
-  opened: "&a🎁 Buon Natale! &7Finora hai aperto &e{0} &7regalo/i."
+  opened: "&a🎁 Buon Natale! &7Regali che hai aperto finora: &e{0}&7."
 
 # Nomi di creature e oggetti
 entity:
@@ -180,8 +180,8 @@ entity:
 
 # Annunci
 broadcast:
-  gift-spawned: "&c🎁 È apparso un regalo di Natale in &e{0} &ca &e{1} {2} {3}&c!"
-  gift-opened: "&a🎁 &e{0} &aha aperto un regalo di Natale a &e{1} {2} {3}&a!"
+  gift-spawned: "&c🎁 Un regalo di Natale è apparso nel mondo &e{0} &calle coordinate &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 &e{0} &aha aperto un regalo di Natale alle coordinate &e{1} {2} {3}&a!"
   event-activated: "&b❄ &fLa stagione natalizia è iniziata! &7Ti aspettano neve, regali e buona compagnia."
   event-deactivated: "&b❄ &fLa stagione natalizia è finita. &7Grazie per aver festeggiato con noi!"
 
@@ -189,7 +189,7 @@ broadcast:
 advent:
   usage: "&b/advent &7[status|<giorno>]"
   disabled: "&cIl calendario dell'Avvento è disattivato."
-  event-inactive: "&cIl calendario dell'Avvento è disponibile solo durante l'evento natalizio."
+  event-inactive: "&cIl calendario dell'Avvento è disponibile solo quando l'evento natalizio è attivo."
   not-in-season: "&cIl calendario dell'Avvento va dal {0}.{1}. al {2}.{3}."
   invalid-day: "&cScegli un giorno tra {0} e {1}."
   future-day: "&cLa casella {0} non è ancora aperta - pazienza!"

@@ -24,7 +24,7 @@ command:
     cleanup: "&7Eliminando entidades, objetos y cofres de regalo del evento..."
     success: "&cEvento desactivado. &7(Los biomas y la nieve se restauran por lotes)"
     backup-failed: "&c&l¡ATENCIÓN: falló la copia con fecha! &7La restauración continúa de todos modos."
-    already-inactive: "&eChristmasSeason ya está desactivado. &7Si una restauración anterior dejó snapshots, se vuelven a procesar."
+    already-inactive: "&eChristmasSeason ya está desactivado. &7Los snapshots que hayan quedado de una restauración anterior se restablecen de nuevo, si los hay."
 
   status:
     message: "&bEstado: {0} &7| Tormenta de nieve: {1}"
@@ -80,7 +80,7 @@ command:
       compared: "&7Chunks comparados: &f{0}"
       identical: "&7Idénticos: &a{0} &7({1}%)"
       differences: "&7Distintos: &c{0}"
-      top-header: "&7Top 5 de chunks con diferencias:"
+      top-header: "&7Los 5 chunks con más diferencias:"
       top-entry: "&7  {0}. &fChunk[{1}, {2}] &7- &c{3} &7celdas"
       fix-hint: "&eCorregir: &f/xmas biome fix-diff {0}"
       footer: "&6═══════════════════════════"
@@ -151,7 +151,7 @@ command:
     clear-confirm: "&c&lATENCIÓN: &7esto borra &f{0} &7copia(s) con fecha y de emergencia (SAFE se conserva). Confirma con: &f/xmas backup clear confirm"
 
   feature:
-    usage: "&b/xmas feature &e<nombre> <on|off> &7- activa o desactiva una función en caliente (se guarda en config.yml)"
+    usage: "&b/xmas feature &e<nombre> <on|off> &7- activa o desactiva una función mientras el servidor está en marcha (se guarda en config.yml)"
     unknown: "&cFunción desconocida: &f{0}"
     status-on: "&7Función &f{0}&7: &aactivada"
     status-off: "&7Función &f{0}&7: &cdesactivada"
@@ -161,14 +161,14 @@ command:
   stats:
     header: "&6═══ Estadísticas de regalos &7(abiertos en total: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7regalos abiertos, &e{2} &7casillas del calendario"
+    player: "&7{0}: &e{1} &7regalos abiertos, &e{2} &7casillas del calendario de Adviento abiertas"
     unknown-player: "&cJugador desconocido: &f{0}"
 
 # Comandos - /xmasgift
 gift:
   spawned: "&a¡Regalo colocado!"
   spawn-failed: "&cNo se colocó ningún regalo aquí &7(hay otro cofre al lado)."
-  opened: "&a🎁 ¡Feliz Navidad! &7Has abierto &e{0} &7regalo(s) hasta ahora."
+  opened: "&a🎁 ¡Feliz Navidad! &7Regalos que has abierto hasta ahora: &e{0}&7."
 
 # Nombres de entidades y objetos
 entity:
@@ -180,8 +180,8 @@ entity:
 
 # Anuncios
 broadcast:
-  gift-spawned: "&c🎁 ¡Ha aparecido un regalo de Navidad en &e{0} &cen &e{1} {2} {3}&c!"
-  gift-opened: "&a🎁 ¡&e{0} &aha abierto un regalo de Navidad en &e{1} {2} {3}&a!"
+  gift-spawned: "&c🎁 ¡Ha aparecido un regalo de Navidad en el mundo &e{0} &cen las coordenadas &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 ¡&e{0} &aha abierto un regalo de Navidad en las coordenadas &e{1} {2} {3}&a!"
   event-activated: "&b❄ &f¡Ha comenzado la temporada navideña! &7Te esperan nieve, regalos y buena compañía."
   event-deactivated: "&b❄ &fLa temporada navideña ha terminado. &7¡Gracias por celebrarla con nosotros!"
 
@@ -189,12 +189,12 @@ broadcast:
 advent:
   usage: "&b/advent &7[status|<día>]"
   disabled: "&cEl calendario de Adviento está desactivado."
-  event-inactive: "&cEl calendario de Adviento solo está disponible durante el evento navideño."
+  event-inactive: "&cEl calendario de Adviento solo está disponible mientras el evento navideño esté activo."
   not-in-season: "&cEl calendario de Adviento va del {0}.{1}. al {2}.{3}."
   invalid-day: "&cElige un día entre {0} y {1}."
   future-day: "&cLa casilla {0} todavía no se puede abrir - ¡paciencia!"
-  no-catch-up: "&cEn este servidor no se pueden abrir más tarde las casillas perdidas."
-  already-claimed: "&eYa abriste la casilla {0}."
+  no-catch-up: "&cEn este servidor no se pueden abrir más tarde las casillas que te hayas perdido."
+  already-claimed: "&eYa has abierto la casilla {0}."
   claimed: "&a🎄 ¡Casilla {0} abierta! &7Tu recompensa está en tu inventario."
   broadcast: "&a🎄 ¡&e{0} &aha abierto la casilla &e{1} &adel calendario de Adviento!"
   status-header: "&6═══ Calendario de Adviento &7({0}/{1} casillas abiertas) ═══"

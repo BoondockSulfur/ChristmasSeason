@@ -194,7 +194,7 @@ advent:
   invalid-day: "&cPlease choose a day between {0} and {1}."
   future-day: "&cDoor {0} is not open yet - patience!"
   no-catch-up: "&cMissed doors cannot be opened later on this server."
-  already-claimed: "&eYou already opened door {0} today."
+  already-claimed: "&eYou have already opened door {0}."
   claimed: "&a🎄 Door {0} opened! &7Your reward is in your inventory."
   broadcast: "&a🎄 &e{0} &aopened door &e{1} &aof the advent calendar!"
   status-header: "&6═══ Advent calendar &7({0}/{1} doors opened) ═══"

@@ -194,7 +194,7 @@ advent:
   invalid-day: "&c请选择 {0} 到 {1} 之间的日期编号。"
   future-day: "&c第 {0} 扇门还没开放 - 请耐心等待！"
   no-catch-up: "&c本服务器不允许补开错过的门。"
-  already-claimed: "&e你今天已经打开过第 {0} 扇门了。"
+  already-claimed: "&e你已经打开过第 {0} 扇门了。"
   claimed: "&a🎄 第 {0} 扇门已打开！&7奖励已放入你的背包。"
   broadcast: "&a🎄 &e{0} &a打开了降临节日历的第 &e{1} &a扇门！"
   status-header: "&6═══ 降临节日历 &7（已打开 {0}/{1} 扇门）═══"

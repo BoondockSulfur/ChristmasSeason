@@ -21,10 +21,10 @@ command:
     snapshot-disabled: "&c&lUWAGA: system snapshotów jest wyłączony (enableSnapshot: false)! &cBiomy są zmieniane BEZ kopii - automatyczne przywrócenie nie jest możliwe."
 
   "off":
-    cleanup: "&7Usuwanie stworzeń, przedmiotów i skrzyń z prezentami z wydarzenia..."
+    cleanup: "&7Usuwanie encji, przedmiotów i skrzyń z prezentami z wydarzenia..."
     success: "&cWydarzenie wyłączone. &7(Biomy i śnieg są przywracane partiami)"
     backup-failed: "&c&lUWAGA: kopia z datą nie powiodła się! &7Przywracanie i tak trwa dalej."
-    already-inactive: "&eChristmasSeason jest już wyłączony. &7Snapshoty pozostawione przez wcześniejsze przywracanie są przetwarzane ponownie, jeśli istnieją."
+    already-inactive: "&eChristmasSeason jest już wyłączony. &7Snapshoty pozostałe po wcześniejszym przywracaniu zostaną ponownie zresetowane, jeśli istnieją."
 
   status:
     message: "&bStatus: {0} &7| Śnieżyca: {1}"
@@ -37,7 +37,7 @@ command:
     snapshot: "&7Chunki w snapshocie: &f{0}"
     converting: "&eKonwersja świata w toku: &f{0}"
     schedule: "&7Harmonogram: &f{0} &7dni do startu, &f{1} &7dni do końca"
-    gifts-opened: "&7Otwarte prezenty do tej pory: &f{0}"
+    gifts-opened: "&7Liczba otwartych dotąd prezentów: &f{0}"
 
   reload:
     success: "&aKonfiguracja i język przeładowane."
@@ -161,14 +161,14 @@ command:
   stats:
     header: "&6═══ Statystyki prezentów &7(otwarte łącznie: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7otwartych prezentów, &e{2} &7okienek kalendarza"
+    player: "&7{0}: &e{1} &7otwartych prezentów, &e{2} &7otwartych okienek kalendarza adwentowego"
     unknown-player: "&cNieznany gracz: &f{0}"
 
 # Komendy - /xmasgift
 gift:
   spawned: "&aPrezent postawiony!"
   spawn-failed: "&cNie postawiono tu prezentu &7(obok stoi inna skrzynia)."
-  opened: "&a🎁 Wesołych Świąt! &7Otworzyłeś już &e{0} &7prezent(ów)."
+  opened: "&a🎁 Wesołych Świąt! &7Liczba otwartych przez ciebie prezentów: &e{0}&7."
 
 # Nazwy stworzeń i przedmiotów
 entity:
@@ -180,8 +180,8 @@ entity:
 
 # Ogłoszenia
 broadcast:
-  gift-spawned: "&c🎁 W świecie &e{0} &cpojawił się prezent świąteczny na &e{1} {2} {3}&c!"
-  gift-opened: "&a🎁 &e{0} &aotworzył prezent świąteczny na &e{1} {2} {3}&a!"
+  gift-spawned: "&c🎁 W świecie &e{0} &cpojawił się prezent świąteczny na współrzędnych &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 &e{0} &aotworzył prezent świąteczny na współrzędnych &e{1} {2} {3}&a!"
   event-activated: "&b❄ &fSezon świąteczny się zaczął! &7Czekają śnieg, prezenty i miłe towarzystwo."
   event-deactivated: "&b❄ &fSezon świąteczny dobiegł końca. &7Dziękujemy za wspólne świętowanie!"
 
@@ -189,12 +189,12 @@ broadcast:
 advent:
   usage: "&b/advent &7[status|<dzień>]"
   disabled: "&cKalendarz adwentowy jest wyłączony."
-  event-inactive: "&cKalendarz adwentowy jest dostępny tylko podczas wydarzenia świątecznego."
+  event-inactive: "&cKalendarz adwentowy jest dostępny tylko wtedy, gdy wydarzenie świąteczne jest aktywne."
   not-in-season: "&cKalendarz adwentowy trwa od {0}.{1}. do {2}.{3}."
   invalid-day: "&cWybierz dzień od {0} do {1}."
   future-day: "&cOkienko {0} nie jest jeszcze otwarte - cierpliwości!"
   no-catch-up: "&cNa tym serwerze nie można później otwierać przegapionych okienek."
-  already-claimed: "&eOkienko {0} jest już przez ciebie otwarte."
+  already-claimed: "&eOkienko {0} jest już otwarte."
   claimed: "&a🎄 Okienko {0} otwarte! &7Nagroda jest w twoim ekwipunku."
   broadcast: "&a🎄 &e{0} &aotworzył okienko &e{1} &akalendarza adwentowego!"
   status-header: "&6═══ Kalendarz adwentowy &7({0}/{1} otwartych okienek) ═══"
@@ -216,7 +216,7 @@ log:
     progress: "Konwersja świata: {0}/{1} chunków"
     complete: "Konwersja świata zakończona: {0} chunków w {1} s"
   backup:
-    cleared: "Usunięto kopie: {0}."
+    cleared: "Liczba usuniętych kopii zapasowych: {0}."
     list-header: "&6=== KOPIE ZAPASOWE ==="
     list-entry: "&7  [{0}] &f{1} &7({2} KB)"
     list-empty: "&7Brak dostępnych kopii."

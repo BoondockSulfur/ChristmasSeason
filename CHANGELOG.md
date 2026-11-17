@@ -5,7 +5,7 @@ All notable changes to the ChristmasSeason plugin will be documented in this fil
 ## [2.5.0] - 2026-11-17
 
 ### Added
-- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese for all in-game messages (`language: fr`, `es`, `pt_BR`, `pl`, `ru`, `nl`, `it`, `tr`, `zh_CN`); console messages stay English. The selected file is extracted on first use.
+- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese for all in-game messages (`language: fr`, `es`, `pt_BR`, `pl`, `ru`, `nl`, `it`, `tr`, `zh_CN`); console messages stay English. The selected file is extracted on first use. All nine translations were reviewed and corrected.
 
 ### Fixed
 - **Backups:** `/xmas backup restore` is refused while the event is active; converted chunks could lose their original biomes.
@@ -15,6 +15,8 @@ All notable changes to the ChristmasSeason plugin will be documented in this fil
 - **Restore:** snow and ice that neighbouring unconverted chunks had before the event are kept when their border strips are cleaned.
 - **Gifts:** marked chests in unloaded chunks are removed after `/xmas off` even with `gifts.enabled: false`.
 - **`compare`/`fix-diff`:** backup files are read without changing them.
+- **`compare`:** the top 5 now really are the chunks with the most differences.
+- **Advent calendar:** "already opened" no longer claims "today" (wrong for catch-up days).
 
 ### Changed
 - `/xmas on`/`off` in the current state no longer restart, announce or fire the API event; `off` only retries leftover snapshots.

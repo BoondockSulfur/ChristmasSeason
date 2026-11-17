@@ -23,8 +23,8 @@ command:
   "off":
     cleanup: "&7Removendo entidades, itens e baús de presente do evento..."
     success: "&cEvento desativado. &7(Biomas e neve são restaurados em lotes)"
-    backup-failed: "&c&lATENÇÃO: o backup com data falhou! &7A restauração continua mesmo assim."
-    already-inactive: "&eO ChristmasSeason já está desligado. &7Snapshots deixados por uma restauração anterior são processados de novo, se houver."
+    backup-failed: "&c&lATENÇÃO: o backup com data e hora falhou! &7A restauração continua mesmo assim."
+    already-inactive: "&eO ChristmasSeason já está desligado. &7Os snapshots deixados por uma restauração anterior são redefinidos novamente, se houver."
 
   status:
     message: "&bStatus: {0} &7| Nevasca: {1}"
@@ -55,12 +55,12 @@ command:
       success: "&aBioma definido: &e{0} &7chunk(s) agendado(s)."
 
     restore:
-      disabled: "&c&lEste comando está desativado &7(ele podia travar o servidor). Use '/xmas off' para restaurar os biomas."
+      disabled: "&c&lEste comando está desativado &7(pode travar o servidor). Use '/xmas off' para restaurar os biomas."
 
     clearsnap:
       success: "&aSnapshot excluído."
       failed: "&cNão foi possível excluir o snapshot. &7Detalhes no console."
-      blocked-active: "&c&lERRO: o ChristmasSeason está ativo! &7Excluir o snapshot com os biomas alterados perderia os originais para sempre. Execute '/xmas off' primeiro."
+      blocked-active: "&c&lERRO: o ChristmasSeason está ativo! &7Excluir o snapshot enquanto os biomas estão alterados causaria a perda permanente dos biomas originais. Execute '/xmas off' primeiro."
       no-backup: "&c&lATENÇÃO: nenhum backup disponível! &7Crie um primeiro: '/xmas backup create'"
 
     status:
@@ -95,8 +95,8 @@ command:
 
     info:
       header: "&6═══ Informações do bioma em &f{0} {1} {2} &6═══"
-      current: "&7Bioma atual: &f{0} &7- com neve natural: {1}&7, com gelo natural: {2}"
-      original: "&7Original (snapshot): &f{0} &7- com neve natural: {1}&7, com gelo natural: {2}"
+      current: "&7Bioma atual: &f{0} &7- naturalmente nevado: {1}&7, naturalmente gelado: {2}"
+      original: "&7Original (snapshot): &f{0} &7- naturalmente nevado: {1}&7, naturalmente gelado: {2}"
       no-snapshot: "&7Nenhum snapshot para este chunk &8(nunca convertido, ou restaurado e apagado)"
       flags: "&7Excluído: {0} &7| processado nesta sessão: {1} &7| definido manualmente: {2}"
       range: "&7Faixa Y configurada: &f{0} &7a &f{1}"
@@ -148,7 +148,7 @@ command:
     created: "&a✓ Backup criado!"
     create-failed: "&c✗ O backup falhou! Veja o console."
     blocked-active: "&cBackups só podem ser restaurados com o evento desligado. &7Execute '/xmas off' primeiro e aguarde a restauração."
-    clear-confirm: "&c&lATENÇÃO: &7isso exclui &f{0} &7backup(s) com data e de emergência (o SAFE é mantido). Confirme com: &f/xmas backup clear confirm"
+    clear-confirm: "&c&lATENÇÃO: &7isso exclui &f{0} &7backup(s) com data e hora ou de emergência (o SAFE é mantido). Confirme com: &f/xmas backup clear confirm"
 
   feature:
     usage: "&b/xmas feature &e<nome> <on|off> &7- liga ou desliga uma função em tempo real (salvo no config.yml)"
@@ -161,7 +161,7 @@ command:
   stats:
     header: "&6═══ Estatísticas de presentes &7(total aberto: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7presentes abertos, &e{2} &7portas do calendário"
+    player: "&7{0}: &e{1} &7presentes abertos, &e{2} &7portas do calendário do Advento"
     unknown-player: "&cJogador desconhecido: &f{0}"
 
 # Comandos - /xmasgift
@@ -180,8 +180,8 @@ entity:
 
 # Anúncios
 broadcast:
-  gift-spawned: "&c🎁 Um presente de Natal apareceu em &e{0} &cem &e{1} {2} {3}&c!"
-  gift-opened: "&a🎁 &e{0} &aabriu um presente de Natal em &e{1} {2} {3}&a!"
+  gift-spawned: "&c🎁 Um presente de Natal apareceu no mundo &e{0} &cnas coordenadas &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 &e{0} &aabriu um presente de Natal nas coordenadas &e{1} {2} {3}&a!"
   event-activated: "&b❄ &fA temporada de Natal começou! &7Neve, presentes e boa companhia esperam por você."
   event-deactivated: "&b❄ &fA temporada de Natal acabou. &7Obrigado por comemorar com a gente!"
 
@@ -189,11 +189,11 @@ broadcast:
 advent:
   usage: "&b/advent &7[status|<dia>]"
   disabled: "&cO calendário do Advento está desativado."
-  event-inactive: "&cO calendário do Advento só está disponível durante o evento de Natal."
+  event-inactive: "&cO calendário do Advento só está disponível enquanto o evento de Natal estiver ativo."
   not-in-season: "&cO calendário do Advento vai de {0}.{1}. a {2}.{3}."
   invalid-day: "&cEscolha um dia entre {0} e {1}."
   future-day: "&cA porta {0} ainda não pode ser aberta - paciência!"
-  no-catch-up: "&cNeste servidor, portas perdidas não podem ser abertas depois."
+  no-catch-up: "&cNeste servidor, as portas do Advento que você perdeu não podem ser abertas depois."
   already-claimed: "&eVocê já abriu a porta {0}."
   claimed: "&a🎄 Porta {0} aberta! &7Sua recompensa está no seu inventário."
   broadcast: "&a🎄 &e{0} &aabriu a porta &e{1} &ado calendário do Advento!"
