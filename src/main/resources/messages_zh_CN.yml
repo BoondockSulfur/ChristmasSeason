@@ -21,10 +21,10 @@ command:
     snapshot-disabled: "&c&l警告：快照系统已禁用（enableSnapshot: false）！&c生物群系将在没有备份的情况下被修改 - 无法自动恢复。"
 
   "off":
-    cleanup: "&7正在移除活动生物、物品和礼物箱..."
+    cleanup: "&7正在移除活动实体、物品和礼物箱..."
     success: "&c活动已关闭。&7（生物群系和积雪将分批恢复）"
     backup-failed: "&c&l警告：带时间戳的备份失败！&7恢复仍会继续进行。"
-    already-inactive: "&eChristmasSeason 已经关闭。&7如有之前恢复遗留的快照，将再次处理。"
+    already-inactive: "&eChristmasSeason 已经关闭。&7如果上次恢复过程中留下了快照，将再次重置这些快照。"
 
   status:
     message: "&b状态：{0} &7| 暴风雪：{1}"
@@ -32,7 +32,7 @@ command:
     inactive: "&c关闭"
     region: "&7区域保护：&f{0}"
     restoring: "&e生物群系恢复中：&f{0}"
-    worlds: "&7雪世界：&f{0}"
+    worlds: "&7降雪世界：&f{0}"
     objects: "&7追踪中：&f{0} &7个礼物箱，&f{1} &7个装饰，&f{2} &7个小矮人/精灵，&f{3} &7个雪人"
     snapshot: "&7快照中的区块：&f{0}"
     converting: "&e世界转换中：&f{0}"
@@ -65,8 +65,8 @@ command:
 
     status:
       header: "&7═══ 快照数据库 ═══"
-      db-inactive: "&c✗ 数据库：未启用 &7（活动未开启或 enableSnapshot: false）"
-      db-active: "&a✓ 数据库：已启用"
+      db-inactive: "&c✗ 数据库：未激活 &7（活动未开启或 enableSnapshot: false）"
+      db-active: "&a✓ 数据库：已激活"
       db-chunks: "&7  区块：&f{0}"
       db-size: "&7  大小：&f{0} MB"
       db-error: "&c✗ 读取数据库出错：{0}"
@@ -95,8 +95,8 @@ command:
 
     info:
       header: "&6═══ &f{0} {1} {2} &6处的生物群系信息 ═══"
-      current: "&7当前生物群系：&f{0} &7- 天然积雪：{1}&7，天然结冰：{2}"
-      original: "&7原始（快照）：&f{0} &7- 天然积雪：{1}&7，天然结冰：{2}"
+      current: "&7当前生物群系：&f{0} &7- 天然多雪：{1}&7，天然冰冻：{2}"
+      original: "&7原始生物群系（快照）：&f{0} &7- 天然多雪：{1}&7，天然冰冻：{2}"
       no-snapshot: "&7此区块没有快照 &8（从未转换过，或已恢复并清除）"
       flags: "&7已排除：{0} &7| 本次会话已处理：{1} &7| 手动设置：{2}"
       range: "&7配置的 Y 范围：&f{0} &7至 &f{1}"
@@ -151,7 +151,7 @@ command:
     clear-confirm: "&c&l警告：&7这将删除 &f{0} &7个带时间戳的备份和紧急备份（SAFE 会保留）。确认请输入：&f/xmas backup clear confirm"
 
   feature:
-    usage: "&b/xmas feature &e<名称> <on|off> &7- 在运行时开关某项功能（保存到 config.yml）"
+    usage: "&b/xmas feature &e<名称> <on|off> &7- 在服务器运行期间启用或禁用功能（设置将保存到 config.yml）"
     unknown: "&c未知功能：&f{0}"
     status-on: "&7功能 &f{0}&7：&a已开启"
     status-off: "&7功能 &f{0}&7：&c已关闭"
@@ -161,7 +161,7 @@ command:
   stats:
     header: "&6═══ 礼物统计 &7（共打开：&f{0}&7）═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}：已打开 &e{1} &7个礼物，&e{2} &7扇降临节日历门"
+    player: "&7{0}：已打开 &e{1} &7个礼物，开启 &e{2} &7扇降临节日历小门"
     unknown-player: "&c未知玩家：&f{0}"
 
 # 命令 - /xmasgift
@@ -180,21 +180,21 @@ entity:
 
 # 广播
 broadcast:
-  gift-spawned: "&c🎁 一个圣诞礼物出现在 &e{0} &c的 &e{1} {2} {3}&c！"
+  gift-spawned: "&c🎁 圣诞礼物已出现在世界 &e{0}&c，坐标 &e{1} {2} {3}&c！"
   gift-opened: "&a🎁 &e{0} &a在 &e{1} {2} {3} &a打开了一个圣诞礼物！"
   event-activated: "&b❄ &f圣诞季开始了！&7雪花、礼物和欢乐的伙伴正等着你。"
   event-deactivated: "&b❄ &f圣诞季结束了。&7感谢你和我们一起庆祝！"
 
 # 降临节日历
 advent:
-  usage: "&b/advent &7[status|<日期>]"
+  usage: "&b/advent &7[status|<日期编号>]"
   disabled: "&c降临节日历已禁用。"
-  event-inactive: "&c降临节日历仅在圣诞活动期间可用。"
-  not-in-season: "&c降临节日历开放时间为 {0}.{1}. 至 {2}.{3}.。"
-  invalid-day: "&c请选择 {0} 到 {1} 之间的日期。"
+  event-inactive: "&c只有圣诞活动开启时才能使用降临节日历。"
+  not-in-season: "&c降临节日历开放日期：{1}月{0}日 至 {3}月{2}日。"
+  invalid-day: "&c请选择 {0} 到 {1} 之间的日期编号。"
   future-day: "&c第 {0} 扇门还没开放 - 请耐心等待！"
   no-catch-up: "&c本服务器不允许补开错过的门。"
-  already-claimed: "&e你已经打开过第 {0} 扇门了。"
+  already-claimed: "&e你今天已经打开过第 {0} 扇门了。"
   claimed: "&a🎄 第 {0} 扇门已打开！&7奖励已放入你的背包。"
   broadcast: "&a🎄 &e{0} &a打开了降临节日历的第 &e{1} &a扇门！"
   status-header: "&6═══ 降临节日历 &7（已打开 {0}/{1} 扇门）═══"
