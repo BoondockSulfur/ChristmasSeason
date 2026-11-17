@@ -45,6 +45,8 @@ public class BiomeSnapshotDatabase {
 
     private final ChristmasSeason plugin;
     private final File dbFile;
+    /** Backup files are read without touching their journal mode or schema. */
+    private final boolean readOnly;
     private Connection connection;
 
     /** Resolved biome keys; a snapshot holds ~10k entries, so registry lookups are cached. */
@@ -54,10 +56,20 @@ public class BiomeSnapshotDatabase {
         this(plugin, new File(plugin.getDataFolder(), "biome-snapshot.db"));
     }
 
-    /** Opens a specific database file (used for reading backups). */
+    /** Opens a specific database file for reading and writing (WAL leftovers after a crash). */
     public BiomeSnapshotDatabase(ChristmasSeason plugin, File customDbFile) {
+        this(plugin, customDbFile, false);
+    }
+
+    /**
+     * Opens a specific database file.
+     *
+     * @param readOnly {@code true} for backups: no journal mode change, no schema creation, no writes
+     */
+    public BiomeSnapshotDatabase(ChristmasSeason plugin, File customDbFile, boolean readOnly) {
         this.plugin = plugin;
         this.dbFile = customDbFile;
+        this.readOnly = readOnly;
     }
 
     /** Opens the connection and creates the schema if needed. */
@@ -70,6 +82,13 @@ public class BiomeSnapshotDatabase {
         }
 
         connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+
+        if (readOnly) {
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA query_only = ON");
+            }
+            return;
+        }
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute("PRAGMA journal_mode = WAL");
@@ -97,7 +116,41 @@ public class BiomeSnapshotDatabase {
             stmt.execute("CREATE TABLE IF NOT EXISTS placed_columns (" +
                          "world TEXT NOT NULL, x INTEGER NOT NULL, z INTEGER NOT NULL, " +
                          "PRIMARY KEY (world, x, z))");
+            // Surface snow/ice of unconverted neighbour chunks, taken before the event's
+            // snow could spill over the chunk border (x/z are chunk coordinates)
+            stmt.execute("CREATE TABLE IF NOT EXISTS border_masks (" +
+                         "world TEXT NOT NULL, x INTEGER NOT NULL, z INTEGER NOT NULL, " +
+                         "snow BLOB NOT NULL, ice BLOB NOT NULL, PRIMARY KEY (world, x, z))");
         }
+    }
+
+    // ------------------------------------------------------------ neighbour masks
+
+    /** Stores the pre-event surface masks of a neighbour chunk; an existing record is kept. */
+    public synchronized void saveBorderMasks(String world, int chunkX, int chunkZ, byte[] snow, byte[] ice) throws SQLException {
+        try (PreparedStatement pstmt = connection.prepareStatement(
+                "INSERT OR IGNORE INTO border_masks (world, x, z, snow, ice) VALUES (?, ?, ?, ?, ?)")) {
+            pstmt.setString(1, world);
+            pstmt.setInt(2, chunkX);
+            pstmt.setInt(3, chunkZ);
+            pstmt.setBytes(4, snow);
+            pstmt.setBytes(5, ice);
+            pstmt.executeUpdate();
+        }
+    }
+
+    /** @return {snowMask, iceMask} recorded for a neighbour chunk, or {@code null} if there is none */
+    public synchronized byte[][] getBorderMasks(String world, int chunkX, int chunkZ) throws SQLException {
+        try (PreparedStatement pstmt = connection.prepareStatement(
+                "SELECT snow, ice FROM border_masks WHERE world = ? AND x = ? AND z = ?")) {
+            pstmt.setString(1, world);
+            pstmt.setInt(2, chunkX);
+            pstmt.setInt(3, chunkZ);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return new byte[][]{rs.getBytes(1), rs.getBytes(2)};
+            }
+        }
+        return null;
     }
 
     // ------------------------------------------------------------ player placements
@@ -230,6 +283,11 @@ public class BiomeSnapshotDatabase {
         }
 
         private static boolean bit(byte[] mask, int x, int z) {
+            return isBitSet(mask, x, z);
+        }
+
+        /** @return {@code true} if the column bit is set; {@code false} for a {@code null} mask */
+        public static boolean isBitSet(byte[] mask, int x, int z) {
             if (mask == null) return false;
             int i = ((x & 15) << 4) | (z & 15);
             return (mask[i >> 3] & (1 << (i & 7))) != 0;
@@ -276,6 +334,32 @@ public class BiomeSnapshotDatabase {
             }
         }
         return null;
+    }
+
+    /**
+     * Reads only the header of a chunk snapshot.
+     *
+     * @return {yStart, yStep, layers}, or {@code null} if the chunk is not stored
+     */
+    public synchronized int[] loadChunkLayout(String world, int x, int z) throws SQLException {
+        String sql = "SELECT biomes FROM chunks WHERE world = ? AND x = ? AND z = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, world);
+            pstmt.setInt(2, x);
+            pstmt.setInt(3, z);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (!rs.next()) return null;
+                try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(rs.getBytes("biomes")))) {
+                    byte[] h = gzip.readNBytes(6);
+                    if (h.length < 6 || (h[5] & 0xFF) == 0) throw new SQLException("Corrupt snapshot header");
+                    int layers = ((h[1] & 0xFF) << 8) | (h[2] & 0xFF);
+                    int yStart = (short) (((h[3] & 0xFF) << 8) | (h[4] & 0xFF));
+                    return new int[]{yStart, h[5] & 0xFF, layers};
+                } catch (java.io.IOException e) {
+                    throw new SQLException("Unreadable snapshot header: " + e.getMessage(), e);
+                }
+            }
+        }
     }
 
     /** @return {@code true} if a snapshot exists for the chunk */
@@ -326,6 +410,7 @@ public class BiomeSnapshotDatabase {
         try (Statement stmt = connection.createStatement()) {
             stmt.execute("DELETE FROM chunks");
             stmt.execute("DELETE FROM placed_columns");
+            stmt.execute("DELETE FROM border_masks");
         }
         try (Statement stmt = connection.createStatement()) {
             stmt.execute("VACUUM");

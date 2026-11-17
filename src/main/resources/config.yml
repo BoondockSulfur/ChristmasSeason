@@ -5,6 +5,8 @@ active: false
 snowWorld: "world"
 # ... plus any number of additional snow worlds
 snowWorlds: []
+# Language: en, de, fr, es, pt_BR, pl, ru, nl, it, tr, zh_CN
+# (console messages stay English in all languages except en/de; missing keys fall back to English)
 language: "en"
 
 # Automatic activation by date (month-day, year-spanning windows are fine).

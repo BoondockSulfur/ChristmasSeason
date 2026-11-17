@@ -31,7 +31,8 @@ public class SnowmanManager {
 
     private final java.util.Map<UUID, WrappedTask> playerSpawnTasks = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<UUID, WrappedTask> entityAttackTasks = new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.Set<UUID> trackedSnowmen = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Tracked golems (UUID -> world name, for the per-world cap). */
+    private final java.util.Map<UUID, String> trackedSnowmen = new java.util.concurrent.ConcurrentHashMap<>();
 
     public SnowmanManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -95,6 +96,13 @@ public class SnowmanManager {
         return trackedSnowmen.size();
     }
 
+    /** @return tracked golems in the world */
+    private int countIn(World w) {
+        int n = 0;
+        for (String world : trackedSnowmen.values()) if (world.equals(w.getName())) n++;
+        return n;
+    }
+
     /** @return {@code true} if the entity is one of our snow golems */
     public boolean isEventSnowman(Entity entity) {
         return entity instanceof Snowman && entity.getScoreboardTags().contains(TAG);
@@ -104,7 +112,7 @@ public class SnowmanManager {
     public void adopt(Entity entity) {
         if (!isEventSnowman(entity) || !entity.isValid()) return;
         Snowman sm = (Snowman) entity;
-        boolean newlyTracked = trackedSnowmen.add(sm.getUniqueId());
+        boolean newlyTracked = trackedSnowmen.put(sm.getUniqueId(), sm.getWorld().getName()) == null;
         // After a chunk reload the old task holds a stale handle - always re-arm with the live one
         WrappedTask old = entityAttackTasks.remove(sm.getUniqueId());
         if (old != null) old.cancel();
@@ -120,7 +128,7 @@ public class SnowmanManager {
         int removed = 0;
         int tracked = trackedSnowmen.size();
 
-        java.util.Iterator<UUID> it = trackedSnowmen.iterator();
+        java.util.Iterator<UUID> it = trackedSnowmen.keySet().iterator();
         while (it.hasNext()) {
             UUID uuid = it.next();
             WrappedTask attackTask = entityAttackTasks.remove(uuid);
@@ -148,12 +156,12 @@ public class SnowmanManager {
         if (!plugin.isSnowWorld(w)) return;
 
         final int max = plugin.getConfig().getInt("snowmen.maxPerWorld", 6);
-        if (trackedSnowmen.size() >= max) return;
+        if (countIn(w) >= max) return;
         if (plugin.isNearCapReached(player, "snowmen.maxNearPlayer", e -> isEventSnowman(e))) return;
 
         Location playerLoc = player.getLocation();
         scheduler.runAtLocation(playerLoc, () -> {
-            if (trackedSnowmen.size() >= max) return;
+            if (countIn(w) >= max) return;
 
             // Strict water check: snow golems melt in water
             Location loc = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5, true);
@@ -169,7 +177,7 @@ public class SnowmanManager {
             sm.getScoreboardTags().add(TAG);
             sm.setDerp(false);
 
-            trackedSnowmen.add(sm.getUniqueId());
+            trackedSnowmen.put(sm.getUniqueId(), w.getName());
             startEntityAttackTask(sm);
             scheduleLifetime(sm);
         });

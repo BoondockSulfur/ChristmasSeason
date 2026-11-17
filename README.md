@@ -36,6 +36,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **Whole-world conversion:** `/xmas biome convert-all` for maps and servers that want everything white
 - **Runtime toggles:** `/xmas feature <name> on|off` without editing the config
 - **Gift statistics:** first opener is tracked, `/xmas stats`, PlaceholderAPI placeholders, API events for other plugins
+- **11 languages:** English, German, French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese (`language` in config.yml)
 
 ### 🛡️ Protection & Safety
 - **Region Protection:** No spawns in WorldGuard regions or GriefPrevention claims (soft dependency)
@@ -71,7 +72,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.4.2.jar`
+1. **Download:** Get `ChristmasSeason-2.5.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
@@ -97,9 +98,9 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 | `/xmas biome info` | Why is this spot snowy? Current vs. original biome, snapshot, exclusion | `xmas.admin` |
 | `/xmas biome compare <backup>` | Compares current biomes with a backup | `xmas.admin` |
 | `/xmas biome fix-diff <backup> confirm` | Restores differing chunks from a backup | `xmas.admin` |
-| `/xmas backup <list\|restore\|create\|clear>` | Manages biome database backups | `xmas.admin` |
+| `/xmas backup <list\|restore\|create\|clear>` | Manages biome database backups (`restore` only while the event is off, `restore`/`clear` need `confirm`) | `xmas.admin` |
 | `/xmas update check` | Checks Modrinth/GitHub for updates | `xmas.admin` |
-| `/xmas biome convert-all [radius] [world] confirm` | Converts every generated chunk around spawn (budgeted) | `xmas.admin` |
+| `/xmas biome convert-all [radius] [world] confirm` | Converts every generated chunk around spawn (budgeted, radius up to 1000) | `xmas.admin` |
 | `/xmas feature <name> <on\|off>` | Toggles biome/snowstorm/decoration/gifts/wichtel/elves/snowmen/advent at runtime | `xmas.admin` |
 | `/xmas stats [player]` | Gift statistics (top 10 + player) | `xmas.admin` |
 | `/advent [status\|<day>]` | Opens today's advent door / shows the calendar | `xmas.advent` (default: everyone) |
@@ -127,7 +128,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 active: false
 snowWorld: "world"
 snowWorlds: []            # additional snow worlds
-language: "en"  # en or de
+language: "en"  # en, de, fr, es, pt_BR, pl, ru, nl, it, tr, zh_CN
 
 schedule:
   enabled: false
@@ -198,7 +199,7 @@ gifts:
 wichtel:
   enabled: true
   spawnIntervalSeconds: 45
-  maxPerWorld: 6
+  maxPerWorld: 6            # counted per world
   maxNearPlayer: 0          # per-player cap within spawning.nearRadius (0 = off)
   stealOnlyDecorations: true  # false = also collect other dropped items (never player drops)
 
@@ -323,7 +324,7 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 
 ### Problem: Emergency backups after every restart
 **Cause:** The server was stopped while the event was active - that is normal during the season.
-**Solution:** Nothing to do. Only the newest three emergency backups are kept; `/xmas backup clear` removes them.
+**Solution:** Nothing to do. Only the newest three emergency backups are kept; `/xmas backup clear confirm` removes them. The startup only warns if the event is active and the snapshot database is missing - then restore one of them before `/xmas off`.
 
 ### Problem: Snow layers or ice remain after `/xmas off`
 **Cause:** The restore only removes snow/ice where the *original* biome is not naturally snowy or icy (snowy_*, frozen_*, ice_*, grove, jagged_peaks). Snow in those biomes is natural and stays.

@@ -8,12 +8,16 @@ import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 
+import java.io.File;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.MonthDay;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 /**
  * Activation and deactivation of the event (shared by {@code /xmas on|off}, the
@@ -35,41 +39,78 @@ public class EventController {
     private final ChristmasSeason plugin;
     private final LanguageManager lang;
     private WrappedTask scheduleTask;
-    /** Last state the schedule applied; {@code null} until the first check. */
-    private Boolean lastScheduledState;
+    /**
+     * Last state the schedule applied; {@code null} if it never ran. Persisted in
+     * {@code data/schedule.yml}, so a manual override survives restarts and reloads.
+     */
+    private volatile Boolean lastScheduledState;
+    private final File scheduleFile;
+    /** Set while {@code /xmas on} writes the SAFE backup off the main thread. */
+    private final AtomicBoolean activating = new AtomicBoolean(false);
 
     public EventController(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
+        this.scheduleFile = new File(new File(plugin.getDataFolder(), "data"), "schedule.yml");
+        loadScheduleState();
     }
 
     // ---------------------------------------------------------- on / off
 
     /**
-     * Activates the event: SAFE backup, config flag, managers, API event.
+     * Activates the event: SAFE backup (off the main thread), config flag, managers, API event.
      *
      * @param feedback receives the user-facing messages (player or console)
-     * @return {@code false} if activation was refused (restore still running)
+     * @return {@code true} if the activation was started; {@code false} if it was refused
+     *         (already active, restore or activation running)
      */
     public boolean activate(CommandSender feedback, XmasStateChangeEvent.Cause cause) {
         if (plugin.getBiomeSnowManager().isRestoring()) {
             lang.send(feedback, "command.on.restore-running");
             return false;
         }
+        if (!activating.compareAndSet(false, true)) {
+            lang.send(feedback, "command.on.activation-running");
+            return false;
+        }
         if (plugin.isActive()) {
+            activating.set(false);
             lang.send(feedback, "command.on.already-active");
+            return false;
         }
 
-        if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-            // An active event has already changed chunks: SAFE keeps the state from before it
-            boolean backupOk = plugin.isActive() || plugin.getBackupManager().createSafeBackup();
-            if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
-                lang.send(feedback, "command.on.backup-failed");
-            }
-        } else {
-            lang.send(feedback, "command.on.snapshot-disabled");
-        }
+        boolean snapshots = plugin.getConfig().getBoolean("biome.enableSnapshot", true);
+        if (!snapshots) lang.send(feedback, "command.on.snapshot-disabled");
 
+        try {
+            // The SAFE copy must be complete before the first chunk changes
+            plugin.getFoliaScheduler().runAsync(() -> {
+                boolean backupFailed;
+                try {
+                    backupFailed = snapshots && !plugin.getBackupManager().createSafeBackup()
+                            && plugin.getBackupManager().hasDatabaseFile();
+                } catch (RuntimeException e) {
+                    lang.logWarning("log.backup.error-creating-safe", e.getMessage());
+                    backupFailed = true;
+                }
+                final boolean failed = backupFailed;
+                plugin.getFoliaScheduler().runGlobalTask(() -> {
+                    try {
+                        if (failed) lang.send(feedback, "command.on.backup-failed");
+                        finishActivation(feedback, cause);
+                    } finally {
+                        activating.set(false);
+                    }
+                });
+            });
+        } catch (RuntimeException e) {
+            activating.set(false);
+            throw e;
+        }
+        return true;
+    }
+
+    private void finishActivation(CommandSender feedback, XmasStateChangeEvent.Cause cause) {
         plugin.setActive(true);
         plugin.startFeatures();
         lang.send(feedback, "command.on.success");
@@ -77,14 +118,31 @@ public class EventController {
             Bukkit.broadcast(lang.getComponent("broadcast.event-activated"));
         }
         Bukkit.getPluginManager().callEvent(new XmasStateChangeEvent(true, cause));
-        return true;
     }
 
-    /** Deactivates the event: backup, cleanup, budgeted biome restore, API event. */
-    public void deactivate(CommandSender feedback, XmasStateChangeEvent.Cause cause) {
+    /**
+     * Deactivates the event: backup, cleanup, budgeted biome restore, API event. While the
+     * event is already off it only retries snapshots an earlier restore could not reset.
+     *
+     * @return {@code false} if refused (restore or activation running)
+     */
+    public boolean deactivate(CommandSender feedback, XmasStateChangeEvent.Cause cause) {
         if (plugin.getBiomeSnowManager().isRestoring()) {
             lang.send(feedback, "command.on.restore-running");
-            return;
+            return false;
+        }
+        if (activating.get()) {
+            lang.send(feedback, "command.on.activation-running");
+            return false;
+        }
+
+        int perTick = Math.max(1, plugin.getConfig().getInt("biome.restore.perTick", 4));
+
+        if (!plugin.isActive()) {
+            lang.send(feedback, "command.off.already-inactive");
+            plugin.getLoadedObjectSync().start();
+            plugin.getBiomeSnowManager().restoreALLAsync(perTick, null, true);
+            return true;
         }
 
         boolean managesWeather = !"none".equalsIgnoreCase(plugin.getConfig().getString("snowstorm.mode", "manual"));
@@ -104,7 +162,6 @@ public class EventController {
         // Keep the database open - the restore needs it and closes it itself
         plugin.stopFeatures(false);
 
-        int perTick = Math.max(1, plugin.getConfig().getInt("biome.restore.perTick", 4));
         Runnable backup = !plugin.getConfig().getBoolean("biome.enableSnapshot", true) ? null : () -> {
             boolean backupOk = plugin.getBackupManager().createTimestampBackup();
             if (!backupOk && plugin.getBackupManager().hasDatabaseFile()) {
@@ -130,6 +187,7 @@ public class EventController {
             Bukkit.broadcast(lang.getComponent("broadcast.event-deactivated"));
         }
         Bukkit.getPluginManager().callEvent(new XmasStateChangeEvent(false, cause));
+        return true;
     }
 
     // ---------------------------------------------------------- schedule
@@ -145,7 +203,24 @@ public class EventController {
 
     public void stopSchedule() {
         if (scheduleTask != null) { scheduleTask.cancel(); scheduleTask = null; }
-        lastScheduledState = null;
+    }
+
+    private void loadScheduleState() {
+        if (!scheduleFile.exists()) return;
+        YamlConfiguration yml = YamlConfiguration.loadConfiguration(scheduleFile);
+        if (yml.isBoolean("lastApplied")) lastScheduledState = yml.getBoolean("lastApplied");
+    }
+
+    private void saveScheduleState(boolean state) {
+        lastScheduledState = state;
+        YamlConfiguration yml = new YamlConfiguration();
+        yml.set("lastApplied", state);
+        try {
+            scheduleFile.getParentFile().mkdirs();
+            yml.save(scheduleFile);
+        } catch (IOException e) {
+            plugin.getLogger().warning("Could not save schedule.yml: " + e.getMessage());
+        }
     }
 
     private MonthDay parseMonthDay(String value, MonthDay def) {
@@ -203,20 +278,33 @@ public class EventController {
         return ChronoUnit.DAYS.between(today, nextEnd(today));
     }
 
-    /** Applies the schedule on state transitions only, so a manual override survives until the next transition. */
+    /**
+     * Applies the schedule on state transitions only, so a manual override survives until the
+     * next transition - also across restarts, the last applied state is persisted. A refused
+     * switch (restore running) is not recorded and retried on the next check.
+     */
     private void checkSchedule() {
         if (!plugin.getConfig().getBoolean("schedule.enabled", false)) return;
         boolean shouldBeActive = isInsideWindow(LocalDate.now(plugin.getZoneId()));
-        if (lastScheduledState != null && lastScheduledState == shouldBeActive) return;
-        lastScheduledState = shouldBeActive;
+        Boolean last = lastScheduledState;
+        if (last != null && last == shouldBeActive) return;
 
+        // No transition recorded yet and outside the window: only remember the state, so
+        // enabling the schedule never switches off an event that was started by hand
+        if (last == null && !shouldBeActive) {
+            saveScheduleState(false);
+            return;
+        }
+
+        boolean applied = true;
         if (shouldBeActive && !plugin.isActive()) {
             lang.logInfo("log.schedule.activating");
-            activate(Bukkit.getConsoleSender(), XmasStateChangeEvent.Cause.SCHEDULE);
+            applied = activate(Bukkit.getConsoleSender(), XmasStateChangeEvent.Cause.SCHEDULE);
         } else if (!shouldBeActive && plugin.isActive() && plugin.getConfig().getBoolean("schedule.autoDeactivate", true)) {
             lang.logInfo("log.schedule.deactivating");
-            deactivate(Bukkit.getConsoleSender(), XmasStateChangeEvent.Cause.SCHEDULE);
+            applied = deactivate(Bukkit.getConsoleSender(), XmasStateChangeEvent.Cause.SCHEDULE);
         }
+        if (applied) saveScheduleState(shouldBeActive);
     }
 
     // ---------------------------------------------------------- features

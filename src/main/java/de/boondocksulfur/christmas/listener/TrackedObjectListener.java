@@ -38,8 +38,9 @@ public class TrackedObjectListener implements Listener {
 
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent e) {
-        // A freshly generated chunk cannot contain gifts
-        if (e.isNewChunk() || !plugin.getConfig().getBoolean("gifts.enabled", true)) return;
+        // A freshly generated chunk cannot contain gifts. Independent of gifts.enabled: adoption
+        // only restores the lifetime of existing chests, removal must always happen
+        if (e.isNewChunk()) return;
         if (plugin.isActive()) {
             plugin.getGiftManager().adoptInChunk(e.getChunk());
         } else {

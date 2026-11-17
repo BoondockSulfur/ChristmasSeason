@@ -15,7 +15,8 @@ command:
   "on":
     success: "&aEvent aktiviert. &7(Schnee-Features laufen)"
     restore-running: "&c&lEin Biome-Restore läuft noch! &7Bitte warten, bis er abgeschlossen ist."
-    already-active: "&e&lChristmasSeason ist bereits aktiv. &7Features werden neu gestartet, bestehende Snapshots bleiben erhalten."
+    already-active: "&eChristmasSeason ist bereits aktiv. &7Mit '/xmas reload' werden die Features neu gestartet."
+    activation-running: "&eChristmasSeason wird gerade aktiviert (SAFE-Backup). &7Bitte einen Moment warten."
     backup-failed: "&c&lWARNUNG: SAFE-Backup konnte nicht erstellt werden! &7Speicherplatz und Rechte im Backup-Ordner prüfen."
     snapshot-disabled: "&c&lWARNUNG: Snapshot-System ist deaktiviert (enableSnapshot: false)! &cBiome werden OHNE Backup geändert - kein automatisches Restore möglich."
 
@@ -23,6 +24,7 @@ command:
     cleanup: "&7Entferne Event-Mobs, Items und Geschenkkisten..."
     success: "&cEvent deaktiviert. &7(Biome und Schnee werden in Batches zurückgesetzt)"
     backup-failed: "&c&lWARNUNG: Timestamp-Backup fehlgeschlagen! &7Restore läuft trotzdem."
+    already-inactive: "&eChristmasSeason ist bereits aus. &7Falls ein früherer Restore Snapshots übrig gelassen hat, werden sie erneut zurückgesetzt."
 
   status:
     message: "&bStatus: {0} &7| Schneesturm: {1}"
@@ -98,8 +100,9 @@ command:
       no-snapshot: "&7Kein Snapshot für diesen Chunk &8(nie konvertiert oder nach dem Restore gelöscht)"
       flags: "&7Ausgeschlossen: {0} &7| in dieser Sitzung verarbeitet: {1} &7| manuell gesetzt: {2}"
       range: "&7Konfigurierter Y-Bereich: &f{0} &7bis &f{1}"
-      yes: "&aja"
-      no: "&cnein"
+      # Anführungszeichen nötig, weil YAML yes/no als Boolean liest
+      "yes": "&aja"
+      "no": "&cnein"
     convert-all:
       usage: "&b/xmas biome convert-all &e[Radius_Chunks] [Welt] confirm &7- konvertiert den ganzen Bereich um den Spawn"
       warning: "&c&lWARNUNG: &7Das lädt und konvertiert &f{0} &7Chunks in &f{1}&7. Die Snapshot-Datenbank wächst entsprechend."
@@ -109,6 +112,7 @@ command:
       cancelled: "&c✗ Konvertierung abgebrochen."
       only-active: "&cconvert-all funktioniert nur, wenn ChristmasSeason aktiv ist."
       not-snow-world: "&cDiese Welt ist keine Schneewelt (siehe snowWorld/snowWorlds in der config.yml)."
+      radius-too-large: "&cRadius {0} ist zu groß - erlaubt sind höchstens &f{1} &cChunks."
 
   debug:
     "on": "&a✓ Debug-Modus aktiviert. &7Tipp: '/xmas debug verbose' für noch mehr Details."
@@ -143,6 +147,8 @@ command:
     creating: "&7Erstelle Backup..."
     created: "&a✓ Backup erstellt!"
     create-failed: "&c✗ Backup fehlgeschlagen! Siehe Konsole."
+    blocked-active: "&cBackups lassen sich nur wiederherstellen, wenn das Event aus ist. &7Zuerst '/xmas off' ausführen und den Restore abwarten."
+    clear-confirm: "&c&lWARNUNG: &7Das löscht &f{0} &7Timestamp- und Notfall-Backup(s) (SAFE bleibt). Bestätigen mit: &f/xmas backup clear confirm"
 
   feature:
     usage: "&b/xmas feature &e<Name> <on|off> &7- schaltet ein Feature zur Laufzeit um (wird in der config.yml gespeichert)"
@@ -236,8 +242,8 @@ log:
     db-corrupt-2: " Integritätsprüfung: {0}"
     db-corrupt-3: " Empfehlung: /xmas backup restore SAFE confirm"
     db-check-failed: "Datenbank-Integritätsprüfung fehlgeschlagen: {0} - die Datenbank könnte beschädigt sein, siehe /xmas backup list"
-    emergency-found-1: " {0} Notfall-Backup(s) gefunden - der Server wurde gestoppt, während ChristmasSeason aktiv war."
-    emergency-found-2: " Nach einem Neustart während des Events normal. Falls Biome falsch aussehen: /xmas backup list -> /xmas backup restore <ID> confirm"
+    emergency-found-1: " Die Snapshot-Datenbank fehlt, es gibt aber {0} Notfall-Backup(s) (beim Stoppen während des Events geschrieben)."
+    emergency-found-2: " Vor '/xmas off' eines wiederherstellen, sonst lassen sich die Biome nicht zurücksetzen: /xmas backup list -> /xmas backup restore <ID> confirm"
     restore-unfinished-1: " {0} Chunk(s) aus einem unvollständigen Restore warten noch - das Event ist aus, ihre Biome sind aber noch nicht zurückgesetzt."
     restore-unfinished-2: " Führe /xmas off aus, um den Restore abzuschließen."
     stopped-while-active: "Server stoppt, während ChristmasSeason AKTIV ist - erstelle Notfall-Backup der Biome-Datenbank."
@@ -315,7 +321,7 @@ log:
     error-creating-emergency: "Fehler beim Erstellen des Notfall-Backups: {0}"
     error-deleting: "Fehler beim Löschen von Backup '{0}'"
     file-not-found: "Backup-Datei nicht gefunden: {0}"
-    restore-while-active: "Backup-Wiederherstellung, während das Event AKTIV ist - der Biome-Manager wird um die Kopie herum neu gestartet. Empfehlung: zuerst '/xmas off'."
+    restore-while-active: "Backup-Wiederherstellung abgelehnt: Das Event ist AKTIV. Umgewandelte Chunks würden ihre Original-Biome verlieren - zuerst '/xmas off'."
     closing-database: "Schließe Datenbank für die Backup-Wiederherstellung..."
     restored: "Backup '{0}' wiederhergestellt ({1} KB)"
     error-restoring: "Fehler beim Wiederherstellen des Backups: {0}"

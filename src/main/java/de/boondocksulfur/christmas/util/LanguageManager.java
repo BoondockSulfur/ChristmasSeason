@@ -39,6 +39,15 @@ public class LanguageManager {
         String fileName = "messages_" + language + ".yml";
         File langFile = new File(plugin.getDataFolder(), fileName);
 
+        // Bundled translations are extracted on first use so admins can adjust them
+        if (!langFile.exists() && plugin.getResource(fileName) != null) {
+            try {
+                plugin.saveResource(fileName, false);
+            } catch (IllegalArgumentException e) {
+                plugin.getLogger().warning("Could not extract " + fileName + ": " + e.getMessage());
+            }
+        }
+
         // Build the new configuration completely, then publish it atomically and clear
         // the cache afterwards. Doing it the other way round let a region thread write a
         // stale string into the fresh cache during reload.

@@ -328,6 +328,10 @@ public class XmasCommand implements CommandExecutor {
             try { radius = Math.max(1, Integer.parseInt(args[2])); }
             catch (NumberFormatException e) { lang.send(sender, "command.biome.convert-all.usage"); return; }
         }
+        if (radius > BiomeSnowManager.MAX_CONVERT_RADIUS) {
+            lang.send(sender, "command.biome.convert-all.radius-too-large", radius, BiomeSnowManager.MAX_CONVERT_RADIUS);
+            return;
+        }
         if (args.length >= 4) {
             world = Bukkit.getWorld(args[3]);
         }
@@ -523,6 +527,10 @@ public class XmasCommand implements CommandExecutor {
                     lang.send(sender, "log.backup.restore-usage");
                     return;
                 }
+                if (plugin.isActive()) {
+                    lang.send(sender, "command.backup.blocked-active");
+                    return;
+                }
                 File backupFile = resolveBackupFile(args[2]);
                 if (backupFile == null) {
                     lang.send(sender, "log.backup.invalid-id");
@@ -549,6 +557,10 @@ public class XmasCommand implements CommandExecutor {
                         backup.createTimestampBackup() ? "command.backup.created" : "command.backup.create-failed"));
             }
             case "clear" -> {
+                if (args.length < 3 || !args[2].equalsIgnoreCase("confirm")) {
+                    lang.send(sender, "command.backup.clear-confirm", backup.listTimestampBackups().size() + backup.listEmergencyBackups().size());
+                    return;
+                }
                 int deleted = backup.clearAllBackups();
                 lang.send(sender, "log.backup.cleared", deleted);
             }

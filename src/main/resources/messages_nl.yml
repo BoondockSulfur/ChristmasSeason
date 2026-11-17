@@ -1,0 +1,228 @@
+# ========================================
+# ChristmasSeason - Nederlandse berichten
+# Kleurcodes met '&'. Consoleberichten (log.*) die hier ontbreken blijven Engels.
+# ========================================
+
+prefix: "&b[Xmas]&7"
+no-permission: "&cGeen toestemming."
+
+# Commando's - /xmas
+command:
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  players-only: "&cDit commando kan alleen in het spel worden gebruikt."
+
+  # Aanhalingstekens nodig, omdat YAML 'on'/'off' als booleans leest
+  "on":
+    success: "&aEvenement geactiveerd. &7(Sneeuwfuncties draaien)"
+    restore-running: "&c&lEr loopt nog een bioomherstel! &7Wacht tot het klaar is."
+    already-active: "&eChristmasSeason is al actief. &7Gebruik '/xmas reload' om de functies opnieuw te starten."
+    activation-running: "&eChristmasSeason wordt nu geactiveerd (SAFE-back-up). &7Even geduld."
+    backup-failed: "&c&lLET OP: SAFE-back-up kon niet worden gemaakt! &7Controleer schijfruimte en rechten van de back-upmap."
+    snapshot-disabled: "&c&lLET OP: het snapshotsysteem is uitgeschakeld (enableSnapshot: false)! &cBiomen worden ZONDER back-up gewijzigd - geen automatisch herstel mogelijk."
+
+  "off":
+    cleanup: "&7Evenementwezens, items en cadeaukisten worden verwijderd..."
+    success: "&cEvenement gedeactiveerd. &7(Biomen en sneeuw worden in delen hersteld)"
+    backup-failed: "&c&lLET OP: back-up met tijdstempel mislukt! &7Het herstel gaat toch door."
+    already-inactive: "&eChristmasSeason staat al uit. &7Snapshots die een eerder herstel heeft achtergelaten, worden opnieuw verwerkt als die er zijn."
+
+  status:
+    message: "&bStatus: {0} &7| Sneeuwstorm: {1}"
+    active: "&aAAN"
+    inactive: "&cUIT"
+    region: "&7Regiobescherming: &f{0}"
+    restoring: "&eBioomherstel bezig: &f{0}"
+    worlds: "&7Sneeuwwerelden: &f{0}"
+    objects: "&7Gevolgd: &f{0} &7cadeaukisten, &f{1} &7versieringen, &f{2} &7kabouters/elfen, &f{3} &7sneeuwpoppen"
+    snapshot: "&7Chunks in snapshot: &f{0}"
+    converting: "&eWereldomzetting bezig: &f{0}"
+    schedule: "&7Planning: &f{0} &7dagen tot de start, nog &f{1} &7dagen"
+    gifts-opened: "&7Tot nu toe geopende cadeaus: &f{0}"
+
+  reload:
+    success: "&aConfiguratie en taal herladen."
+    error: "&cHerladen mislukt - zie console."
+
+  biome:
+    usage: "&b/xmas biome &7<set|clearsnap|status|info|compare|fix-diff|convert-all>"
+    conversion-unavailable: "&cBioomwijzigingen niet beschikbaar: &7'biome.enabled' staat uit of de snapshotdatabase kon niet worden geopend."
+
+    set:
+      usage: "&b/xmas biome set &e<BIOOM> &7[straal_chunks]"
+      unknown-biome: "&cOnbekend bioom."
+      invalid-radius: "&cOngeldig getal voor de straal."
+      only-active: "&c/xmas biome set werkt alleen als ChristmasSeason actief is. &7Voer eerst '/xmas on' uit."
+      success: "&aBioom ingesteld: &e{0} &7chunk(s) ingepland."
+
+    restore:
+      disabled: "&c&lDit commando is uitgeschakeld &7(het kon de server laten vastlopen). Gebruik '/xmas off' om biomen te herstellen."
+
+    clearsnap:
+      success: "&aSnapshot verwijderd."
+      failed: "&cDe snapshot kon niet worden verwijderd. &7Details in de console."
+      blocked-active: "&c&lFOUT: ChristmasSeason is actief! &7De snapshot verwijderen terwijl biomen gewijzigd zijn, zou de originelen voorgoed kwijtmaken. Voer eerst '/xmas off' uit."
+      no-backup: "&c&lLET OP: geen back-up beschikbaar! &7Maak er eerst een: '/xmas backup create'"
+
+    status:
+      header: "&7═══ Snapshotdatabase ═══"
+      db-inactive: "&c✗ Database: NIET ACTIEF &7(evenement inactief of enableSnapshot: false)"
+      db-active: "&a✓ Database: ACTIEF"
+      db-chunks: "&7  Chunks: &f{0}"
+      db-size: "&7  Grootte: &f{0} MB"
+      db-error: "&c✗ Fout bij het lezen van de database: {0}"
+
+    compare:
+      usage: "&b/xmas biome compare &e<back-up-ID> &7- vergelijkt de huidige biomen met een back-up"
+      running: "&7Biomen worden vergeleken met de back-up... &7Dit kan even duren."
+      failed: "&c✗ Vergelijking mislukt! Zie console."
+      header: "&6═══ VERGELIJKINGSRESULTAAT ═══"
+      backup: "&7Back-up: &f{0}"
+      compared: "&7Vergeleken chunks: &f{0}"
+      identical: "&7Identiek: &a{0} &7({1}%)"
+      differences: "&7Verschillend: &c{0}"
+      top-header: "&7Top 5 chunks met verschillen:"
+      top-entry: "&7  {0}. &fChunk[{1}, {2}] &7- &c{3} &7cellen"
+      fix-hint: "&eHerstellen: &f/xmas biome fix-diff {0}"
+      footer: "&6═══════════════════════════"
+
+    fix-diff:
+      usage: "&b/xmas biome fix-diff &e<back-up-ID> &7[confirm] - herstelt verschillende chunks uit een back-up"
+      warning: "&c&lLET OP: &7alle verschillende chunks worden overschreven met de biomen uit de back-up!"
+      confirm: "&eBevestig met: &f/xmas biome fix-diff {0} confirm"
+      running: "&7Verschillen worden hersteld... &7Dit kan een paar minuten duren."
+      done: "&a✓ Herstel voltooid! &7Hersteld: &f{0} &7chunks"
+      failed: "&c✗ Herstel mislukt! Zie console."
+
+    info:
+      header: "&6═══ Bioominfo op &f{0} {1} {2} &6═══"
+      current: "&7Huidig bioom: &f{0} &7- van nature besneeuwd: {1}&7, van nature bevroren: {2}"
+      original: "&7Origineel (snapshot): &f{0} &7- van nature besneeuwd: {1}&7, van nature bevroren: {2}"
+      no-snapshot: "&7Geen snapshot voor deze chunk &8(nooit omgezet, of hersteld en gewist)"
+      flags: "&7Uitgesloten: {0} &7| verwerkt in deze sessie: {1} &7| handmatig ingesteld: {2}"
+      range: "&7Ingesteld Y-bereik: &f{0} &7tot &f{1}"
+      # Aanhalingstekens nodig, omdat YAML yes/no als booleans leest
+      "yes": "&aja"
+      "no": "&cnee"
+    convert-all:
+      usage: "&b/xmas biome convert-all &e[straal_chunks] [wereld] confirm &7- zet het hele gebied rond de spawn om"
+      warning: "&c&lLET OP: &7dit laadt en zet &f{0} &7chunks om in &f{1}&7. De snapshotdatabase groeit navenant."
+      confirm: "&eBevestig met: &f/xmas biome convert-all {0} {1} confirm"
+      started: "&a✓ Omzetting gestart: &f{0} &7chunks in &f{1}&7. Voortgang in de console en met '/xmas status'."
+      running: "&eEr loopt al een omzetting: &f{0} &7- '/xmas biome convert-all cancel' stopt die."
+      cancelled: "&c✗ Omzetting geannuleerd."
+      only-active: "&cconvert-all werkt alleen als ChristmasSeason actief is."
+      not-snow-world: "&cDie wereld is geen sneeuwwereld (zie snowWorld/snowWorlds in config.yml)."
+      radius-too-large: "&cStraal {0} is te groot - maximaal &f{1} &cchunks zijn toegestaan."
+
+  debug:
+    "on": "&a✓ Debugmodus ingeschakeld. &7Tip: '/xmas debug verbose' voor nog meer details."
+    "off": "&c✗ Debugmodus uitgeschakeld."
+    verbose-on: "&a✓ Uitgebreide debugmodus ingeschakeld &7(inclusief details van bioomsnapshots)."
+    verbose-off: "&c✗ Uitgebreide debugmodus uitgeschakeld. &7Normale debuglogs blijven actief."
+
+  storm:
+    usage: "&b/xmas storm &7<on|off|toggle|status|pulse>"
+    "on": "&bSneeuwstorm: &aAAN"
+    "off": "&bSneeuwstorm: &cUIT"
+    toggle: "&bSneeuwstorm: {0}"
+    status: "&bSneeuwstorm: {0}"
+    pulse:
+      success: "&bSneeuwstorm: puls van &e{0}&7 s."
+      invalid-duration: "&cOngeldig aantal seconden."
+      world-not-found: "&cDoelwereld niet gevonden."
+
+  update:
+    usage: "&b/xmas update &7<check>"
+    checking: "&7Zoeken naar updates..."
+    available: "&a&lUpdate beschikbaar! &7Huidig: &c{0} &7- Nieuwste: &a{1}"
+    links: "&7Downloaden: &f{0} &7| &f{1}"
+    up-to-date: "&a✓ Je gebruikt de nieuwste versie &7({0})."
+    failed: "&c✗ Zoeken naar updates mislukt. &7Geen verbinding met Modrinth of GitHub."
+
+  backup:
+    usage: "&b/xmas backup &7<list|restore|create|clear>"
+    restoring: "&7Back-up wordt hersteld..."
+    restored: "&a✓ Back-up hersteld!"
+    restore-failed: "&c✗ Herstel mislukt! Zie console."
+    creating: "&7Back-up wordt gemaakt..."
+    created: "&a✓ Back-up gemaakt!"
+    create-failed: "&c✗ Back-up mislukt! Zie console."
+    blocked-active: "&cBack-ups kunnen alleen worden hersteld als het evenement uit staat. &7Voer eerst '/xmas off' uit en wacht het herstel af."
+    clear-confirm: "&c&lLET OP: &7dit verwijdert &f{0} &7back-up(s) met tijdstempel en noodback-up(s) (SAFE blijft). Bevestig met: &f/xmas backup clear confirm"
+
+  feature:
+    usage: "&b/xmas feature &e<naam> <on|off> &7- schakelt een functie tijdens het draaien (opgeslagen in config.yml)"
+    unknown: "&cOnbekende functie: &f{0}"
+    status-on: "&7Functie &f{0}&7: &aingeschakeld"
+    status-off: "&7Functie &f{0}&7: &cuitgeschakeld"
+    enabled: "&a✓ Functie &f{0} &aingeschakeld."
+    disabled: "&c✗ Functie &f{0} &cuitgeschakeld."
+
+  stats:
+    header: "&6═══ Cadeaustatistieken &7(totaal geopend: &f{0}&7) ═══"
+    entry: "&7  {0}. &f{1} &7- &e{2}"
+    player: "&7{0}: &e{1} &7cadeaus geopend, &e{2} &7adventsdeurtjes"
+    unknown-player: "&cOnbekende speler: &f{0}"
+
+# Commando's - /xmasgift
+gift:
+  spawned: "&aCadeau geplaatst!"
+  spawn-failed: "&cHier is geen cadeau geplaatst &7(er staat een andere kist naast)."
+  opened: "&a🎁 Vrolijk kerstfeest! &7Je hebt tot nu toe &e{0} &7cadeau(s) geopend."
+
+# Namen van wezens en items
+entity:
+  wichtel: "&aKabouter"
+  elf: "&bElf"
+  snowman: "&fSneeuwpop"
+  decoration: "&aKerstversiering"
+  gift-chest: "&c&lKerstcadeau"
+
+# Mededelingen
+broadcast:
+  gift-spawned: "&c🎁 Er is een kerstcadeau verschenen in &e{0} &cop &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 &e{0} &aheeft een kerstcadeau geopend op &e{1} {2} {3}&a!"
+  event-activated: "&b❄ &fHet kerstseizoen is begonnen! &7Sneeuw, cadeaus en gezelligheid wachten op je."
+  event-deactivated: "&b❄ &fHet kerstseizoen is voorbij. &7Bedankt voor het meevieren!"
+
+# Adventskalender
+advent:
+  usage: "&b/advent &7[status|<dag>]"
+  disabled: "&cDe adventskalender is uitgeschakeld."
+  event-inactive: "&cDe adventskalender is alleen beschikbaar tijdens het kerstevenement."
+  not-in-season: "&cDe adventskalender loopt van {0}.{1}. tot {2}.{3}."
+  invalid-day: "&cKies een dag tussen {0} en {1}."
+  future-day: "&cDeurtje {0} is nog niet open - geduld!"
+  no-catch-up: "&cGemiste deurtjes kunnen op deze server later niet meer worden geopend."
+  already-claimed: "&eJe hebt deurtje {0} al geopend."
+  claimed: "&a🎄 Deurtje {0} geopend! &7Je beloning zit in je inventaris."
+  broadcast: "&a🎄 &e{0} &aheeft deurtje &e{1} &avan de adventskalender geopend!"
+  status-header: "&6═══ Adventskalender &7({0}/{1} deurtjes geopend) ═══"
+  today-claimed: "&7Het deurtje van vandaag ({0}) is al open."
+  today-open: "&eDeurtje {0} wacht op je: &f/advent"
+
+# Updatemelding voor operators (links worden als klikbare tekst toegevoegd)
+update:
+  header: "&8&l&m                                    "
+  available: "&b&lChristmasSeason &7- &aUpdate beschikbaar!"
+  current: "&7Huidige versie: &c{0}"
+  latest: "&7Nieuwste versie: &a{0}"
+  download: "&7Downloaden:"
+  footer: "&8&l&m                                    "
+
+# Consoleberichten die spelers ook zien (de rest blijft Engels)
+log:
+  convert:
+    progress: "Wereldomzetting: {0}/{1} chunks"
+    complete: "Wereldomzetting voltooid: {0} chunks in {1} s"
+  backup:
+    cleared: "{0} back-up(s) verwijderd."
+    list-header: "&6=== BACK-UPS ==="
+    list-entry: "&7  [{0}] &f{1} &7({2} KB)"
+    list-empty: "&7Geen back-ups beschikbaar."
+    list-footer: "&6================"
+    restore-usage: "&b/xmas backup restore &e<ID> &7[confirm]"
+    invalid-id: "&cOngeldige back-up-ID. &7Zie /xmas backup list"
+    restore-confirm: "&aBevestig het herstel:"
+    restore-warning: "&c  De huidige database wordt vervangen!"
+    restore-command: "&e  /xmas backup restore {0} confirm"

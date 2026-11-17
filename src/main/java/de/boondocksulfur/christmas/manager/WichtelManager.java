@@ -31,9 +31,9 @@ public class WichtelManager {
     /** Per-mob AI tasks (entity scheduler). */
     private final Map<UUID, WrappedTask> entityStealTasks = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Tracked mobs; mutated from several region threads. */
-    private final Set<UUID> trackedWichtel = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final Set<UUID> trackedElfen   = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Tracked mobs (UUID -> world name, for the per-world caps); mutated from several region threads. */
+    private final Map<UUID, String> trackedWichtel = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, String> trackedElfen   = new java.util.concurrent.ConcurrentHashMap<>();
 
     public WichtelManager(ChristmasSeason plugin) {
         this.plugin = plugin;
@@ -136,12 +136,12 @@ public class WichtelManager {
         Set<String> tags = entity.getScoreboardTags();
         UUID id = entity.getUniqueId();
 
-        Set<UUID> tracker;
+        Map<UUID, String> tracker;
         if (tags.contains(TAG_WICHTEL)) tracker = trackedWichtel;
         else if (tags.contains(TAG_ELF)) tracker = trackedElfen;
         else return;
 
-        boolean newlyTracked = tracker.add(id);
+        boolean newlyTracked = tracker.put(id, entity.getWorld().getName()) == null;
         // After a chunk reload the old task holds a stale handle - always re-arm with the live one
         WrappedTask old = entityStealTasks.remove(id);
         if (old != null) old.cancel();
@@ -183,9 +183,16 @@ public class WichtelManager {
         lang.logInfo("log.cleanup.wichtel", removed, wichtelCount, elfenCount);
     }
 
-    private int removeTracked(Set<UUID> tracker) {
+    /** @return tracked mobs of this map that live in the world */
+    private static int countIn(Map<UUID, String> tracker, World w) {
+        int n = 0;
+        for (String world : tracker.values()) if (world.equals(w.getName())) n++;
+        return n;
+    }
+
+    private int removeTracked(Map<UUID, String> tracker) {
         int removed = 0;
-        Iterator<UUID> it = tracker.iterator();
+        Iterator<UUID> it = tracker.keySet().iterator();
         while (it.hasNext()) {
             UUID uuid = it.next();
             WrappedTask stealTask = entityStealTasks.remove(uuid);
@@ -211,13 +218,13 @@ public class WichtelManager {
         if (!isMobWorld(w, "wichtel.world")) return;
 
         final int maxWichtel = plugin.getConfig().getInt("wichtel.maxPerWorld", 6);
-        if (trackedWichtel.size() >= maxWichtel) return;
+        if (countIn(trackedWichtel, w) >= maxWichtel) return;
         if (plugin.isNearCapReached(player, "wichtel.maxNearPlayer", e -> e.getScoreboardTags().contains(TAG_WICHTEL))) return;
 
         Location playerLoc = player.getLocation();
         scheduler.runAtLocation(playerLoc, () -> {
             // Re-check: parallel spawns for other players may have filled the cap meanwhile
-            if (trackedWichtel.size() >= maxWichtel) return;
+            if (countIn(trackedWichtel, w) >= maxWichtel) return;
 
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
             if (spawn == null) return;
@@ -234,7 +241,7 @@ public class WichtelManager {
             z.getScoreboardTags().add(TAG_WICHTEL);
             if (z.getEquipment() != null) z.getEquipment().clear();
             z.setTarget(null);
-            trackedWichtel.add(z.getUniqueId());
+            trackedWichtel.put(z.getUniqueId(), w.getName());
 
             startEntityStealTask(z);
             scheduleLifetime(z, trackedWichtel);
@@ -247,12 +254,12 @@ public class WichtelManager {
         if (!isMobWorld(w, "elves.world")) return;
 
         final int maxElfen = plugin.getConfig().getInt("elves.maxPerWorld", 4);
-        if (trackedElfen.size() >= maxElfen) return;
+        if (countIn(trackedElfen, w) >= maxElfen) return;
         if (plugin.isNearCapReached(player, "elves.maxNearPlayer", e -> e.getScoreboardTags().contains(TAG_ELF))) return;
 
         Location playerLoc = player.getLocation();
         scheduler.runAtLocation(playerLoc, () -> {
-            if (trackedElfen.size() >= maxElfen) return;
+            if (countIn(trackedElfen, w) >= maxElfen) return;
 
             Location spawn = SpawnUtil.findSafeSpawnLocation(w, playerLoc, 10, 5);
             if (spawn == null) return;
@@ -267,7 +274,7 @@ public class WichtelManager {
             a.setRemoveWhenFarAway(false);
             a.setCanPickupItems(false);
             a.getScoreboardTags().add(TAG_ELF);
-            trackedElfen.add(a.getUniqueId());
+            trackedElfen.put(a.getUniqueId(), w.getName());
 
             startEntityStealTask(a);
             scheduleLifetime(a, trackedElfen);
@@ -279,7 +286,7 @@ public class WichtelManager {
      * if the mob dies earlier - the retired callback keeps the tracking set clean, otherwise
      * dead UUIDs would fill the spawn cap.
      */
-    private void scheduleLifetime(LivingEntity entity, Set<UUID> tracker) {
+    private void scheduleLifetime(LivingEntity entity, Map<UUID, String> tracker) {
         int wichtelLifetime = plugin.getConfig().getInt("wichtel.lifetimeSeconds", 240);
         int lifetime = Math.max(10, tracker == trackedElfen
                 ? plugin.getConfig().getInt("elves.lifetimeSeconds", wichtelLifetime)

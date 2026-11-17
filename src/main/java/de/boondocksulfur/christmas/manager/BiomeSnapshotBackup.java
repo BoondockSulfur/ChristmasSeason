@@ -283,8 +283,8 @@ public class BiomeSnapshotBackup {
      * Replaces the active database with a backup. The current database is kept as
      * {@code biome_snapshot_REPLACED_<timestamp>.db}.
      *
-     * <p>Should only be used while the event is inactive; while active, the snapshot
-     * manager is stopped and restarted around the copy.
+     * <p>Refused while the event is active: converted chunks whose snapshots are missing in
+     * the backup would get the already snowy state as their new "original".
      *
      * @return {@code true} on success
      */
@@ -301,11 +301,11 @@ public class BiomeSnapshotBackup {
 
         if (plugin.isActive()) {
             lang.logWarning("log.backup.restore-while-active");
+            return false;
         }
 
         try {
-            BiomeSnapshotDatabase db = plugin.getBiomeSnowManager().getDatabase();
-            if (db != null) {
+            if (plugin.getBiomeSnowManager().getDatabase() != null) {
                 lang.logInfo("log.backup.closing-database");
                 plugin.getBiomeSnowManager().stop(true);
             }
@@ -326,14 +326,6 @@ public class BiomeSnapshotBackup {
             lang.logSevere("log.backup.error-restoring", e.getMessage());
             if (plugin.isDebugMode()) e.printStackTrace();
             return false;
-        } finally {
-            if (plugin.isActive() && plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
-                BiomeSnowManager manager = plugin.getBiomeSnowManager();
-                manager.start();
-                // stop() cancelled the per-player timers on Folia, start() does not recreate them
-                Bukkit.getOnlinePlayers().forEach(manager::startPlayerTracking);
-                lang.logInfo("log.backup.database-reopened");
-            }
         }
     }
 

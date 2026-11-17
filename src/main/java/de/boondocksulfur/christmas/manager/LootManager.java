@@ -96,16 +96,13 @@ public class LootManager {
     @SuppressWarnings("unchecked")
     private LootEntry parseEntry(Object o, String path) {
         if (o instanceof String s) {
-            String[] split = s.split(":");
-            Material m = Material.matchMaterial(split[0].trim());
+            String[] split = splitMaterialAmount(s);
+            Material m = Material.matchMaterial(split[0]);
             if (m == null) {
                 lang.logWarning("log.config.unknown-material", split[0], path);
                 return null;
             }
-            int amount = 1;
-            if (split.length > 1) {
-                try { amount = Integer.parseInt(split[1].trim()); } catch (NumberFormatException ignored) {}
-            }
+            int amount = split[1] == null ? 1 : Integer.parseInt(split[1]);
             return new LootEntry(m, Math.max(1, amount), Math.max(1, amount), 1.0, null, List.of(), Map.of(), false, List.of());
         }
         if (o instanceof Map<?, ?> map) {
@@ -148,6 +145,23 @@ public class LootManager {
         }
         lang.logWarning("log.config.loot-entry-invalid", path);
         return null;
+    }
+
+    /**
+     * Splits the simple loot format into material and amount. Namespaced materials work too:
+     * {@code "minecraft:diamond:2"} gives {@code {"minecraft:diamond", "2"}}, {@code "DIAMOND"}
+     * gives {@code {"DIAMOND", null}}.
+     */
+    public static String[] splitMaterialAmount(String entry) {
+        String t = entry.trim();
+        int i = t.lastIndexOf(':');
+        if (i > 0) {
+            String amount = t.substring(i + 1).trim();
+            if (!amount.isEmpty() && amount.length() <= 9 && amount.chars().allMatch(Character::isDigit)) {
+                return new String[]{t.substring(0, i).trim(), amount};
+            }
+        }
+        return new String[]{t, null};
     }
 
     private static List<String> toStringList(Object o) {

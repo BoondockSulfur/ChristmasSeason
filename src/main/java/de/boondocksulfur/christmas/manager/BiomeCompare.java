@@ -49,7 +49,7 @@ public class BiomeCompare {
             return null;
         }
 
-        BiomeSnapshotDatabase backupDb = new BiomeSnapshotDatabase(plugin, backupFile);
+        BiomeSnapshotDatabase backupDb = new BiomeSnapshotDatabase(plugin, backupFile, true);
         try {
             backupDb.open();
             List<BiomeSnapshotDatabase.ChunkCoords> backupChunks = backupDb.getAllChunkCoordinates();
@@ -110,7 +110,7 @@ public class BiomeCompare {
             coords.add(new BiomeSnapshotDatabase.ChunkCoords(diff.world, diff.chunkX, diff.chunkZ));
         }
 
-        BiomeSnapshotDatabase backupDb = new BiomeSnapshotDatabase(plugin, backupFile);
+        BiomeSnapshotDatabase backupDb = new BiomeSnapshotDatabase(plugin, backupFile, true);
         try {
             backupDb.open();
             java.util.concurrent.atomic.AtomicInteger fixed = new java.util.concurrent.atomic.AtomicInteger();

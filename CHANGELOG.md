@@ -2,6 +2,30 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.5.0] - 2026-11-17
+
+### Added
+- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese for all in-game messages (`language: fr`, `es`, `pt_BR`, `pl`, `ru`, `nl`, `it`, `tr`, `zh_CN`); console messages stay English. The selected file is extracted on first use.
+
+### Fixed
+- **Backups:** `/xmas backup restore` is refused while the event is active; converted chunks could lose their original biomes.
+- **Schedule:** the last applied state is saved, so a manual `/xmas on`/`off` survives restarts and reloads; a switch refused during a restore is retried.
+- **Biome safety:** changing `biome.changeMinY/MaxY` or `verticalStep` during the event no longer converts cells the snapshot does not cover.
+- **`/xmas biome info`:** yes/no were shown as missing translations.
+- **Restore:** snow and ice that neighbouring unconverted chunks had before the event are kept when their border strips are cleaned.
+- **Gifts:** marked chests in unloaded chunks are removed after `/xmas off` even with `gifts.enabled: false`.
+- **`compare`/`fix-diff`:** backup files are read without changing them.
+
+### Changed
+- `/xmas on`/`off` in the current state no longer restart, announce or fire the API event; `off` only retries leftover snapshots.
+- The SAFE backup of `/xmas on` runs off the main thread.
+- `wichtel`, `elves` and `snowmen` `maxPerWorld` now count per world.
+- `convert-all` accepts a radius up to 1000 and no longer builds a coordinate list.
+- `/xmas backup clear` needs `confirm`.
+- The emergency backup warning on startup only appears when the event is active and the database is missing.
+- Event mobs can be set on fire by players and blocks again (daylight protection stays).
+- Simple loot entries accept namespaced materials (`minecraft:diamond:2`).
+
 ## [2.4.2] - 2026-11-04
 
 ### Fixed

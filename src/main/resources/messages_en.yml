@@ -15,7 +15,8 @@ command:
   "on":
     success: "&aEvent activated. &7(Snow features are running)"
     restore-running: "&c&lA biome restore is still running! &7Please wait until it has finished."
-    already-active: "&e&lChristmasSeason is already active. &7Features are restarted, existing snapshots are kept."
+    already-active: "&eChristmasSeason is already active. &7Use '/xmas reload' to restart the features."
+    activation-running: "&eChristmasSeason is being activated right now (SAFE backup). &7Please wait a moment."
     backup-failed: "&c&lWARNING: SAFE backup could not be created! &7Check disk space and permissions of the backup folder."
     snapshot-disabled: "&c&lWARNING: Snapshot system is disabled (enableSnapshot: false)! &cBiomes are changed WITHOUT a backup - no automatic restore possible."
 
@@ -23,6 +24,7 @@ command:
     cleanup: "&7Removing event entities, items and gift chests..."
     success: "&cEvent deactivated. &7(Biomes and snow are restored in batches)"
     backup-failed: "&c&lWARNING: Timestamp backup failed! &7The restore runs anyway."
+    already-inactive: "&eChristmasSeason is already off. &7Snapshots left by an earlier restore are reset again, if there are any."
 
   status:
     message: "&bStatus: {0} &7| Snowstorm: {1}"
@@ -98,8 +100,9 @@ command:
       no-snapshot: "&7No snapshot for this chunk &8(never converted, or restored and cleared)"
       flags: "&7Excluded: {0} &7| processed this session: {1} &7| manual set: {2}"
       range: "&7Configured Y range: &f{0} &7to &f{1}"
-      yes: "&ayes"
-      no: "&cno"
+      # Quotes needed because YAML interprets yes/no as booleans
+      "yes": "&ayes"
+      "no": "&cno"
     convert-all:
       usage: "&b/xmas biome convert-all &e[radius_chunks] [world] confirm &7- converts the whole area around spawn"
       warning: "&c&lWARNING: &7This loads and converts &f{0} &7chunks in &f{1}&7. The snapshot database grows accordingly."
@@ -109,6 +112,7 @@ command:
       cancelled: "&c✗ Conversion cancelled."
       only-active: "&cconvert-all only works while ChristmasSeason is active."
       not-snow-world: "&cThat world is not a snow world (see snowWorld/snowWorlds in config.yml)."
+      radius-too-large: "&cRadius {0} is too large - at most &f{1} &cchunks are allowed."
 
   debug:
     "on": "&a✓ Debug mode enabled. &7Tip: '/xmas debug verbose' for even more detail."
@@ -143,6 +147,8 @@ command:
     creating: "&7Creating backup..."
     created: "&a✓ Backup created!"
     create-failed: "&c✗ Backup failed! See console."
+    blocked-active: "&cBackups can only be restored while the event is off. &7Run '/xmas off' first and wait for the restore."
+    clear-confirm: "&c&lWARNING: &7This deletes &f{0} &7timestamp and emergency backup(s) (SAFE is kept). Confirm with: &f/xmas backup clear confirm"
 
   feature:
     usage: "&b/xmas feature &e<name> <on|off> &7- toggles a feature at runtime (saved to config.yml)"
@@ -236,8 +242,8 @@ log:
     db-corrupt-2: " Integrity check: {0}"
     db-corrupt-3: " Recommended: /xmas backup restore SAFE confirm"
     db-check-failed: "Database integrity check failed: {0} - the database may be damaged, check /xmas backup list"
-    emergency-found-1: " {0} emergency backup(s) found - the server was stopped while ChristmasSeason was active."
-    emergency-found-2: " Normal after a restart during the event. If biomes look wrong: /xmas backup list -> /xmas backup restore <ID> confirm"
+    emergency-found-1: " The snapshot database is missing, but {0} emergency backup(s) exist (written when the server stopped during the event)."
+    emergency-found-2: " Restore one before '/xmas off', otherwise the biomes cannot be reset: /xmas backup list -> /xmas backup restore <ID> confirm"
     restore-unfinished-1: " {0} chunk(s) from an unfinished restore are still waiting - the event is off, but their biomes are not back yet."
     restore-unfinished-2: " Run /xmas off to finish the restore."
     stopped-while-active: "Server is stopping while ChristmasSeason is ACTIVE - creating emergency backup of the biome database."
@@ -315,7 +321,7 @@ log:
     error-creating-emergency: "Error creating emergency backup: {0}"
     error-deleting: "Error deleting backup '{0}'"
     file-not-found: "Backup file not found: {0}"
-    restore-while-active: "Backup restore while the event is ACTIVE - the biome manager is restarted around the copy. Recommended: '/xmas off' first."
+    restore-while-active: "Backup restore refused: the event is ACTIVE. Converted chunks would lose their original biomes - run '/xmas off' first."
     closing-database: "Closing database for backup restore..."
     restored: "Backup '{0}' restored ({1} KB)"
     error-restoring: "Error restoring backup: {0}"

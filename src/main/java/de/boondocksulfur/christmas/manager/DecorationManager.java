@@ -154,11 +154,10 @@ public class DecorationManager {
             place = place.add(0, 0.5, 0);
 
             String entry = drops.get(random.nextInt(drops.size()));
-            String[] split = entry.split(":");
+            String[] split = LootManager.splitMaterialAmount(entry);
             Material mat = Material.matchMaterial(split[0]);
             if (mat == null) return;
-            int amount = 1;
-            if (split.length > 1) try { amount = Integer.parseInt(split[1]); } catch (NumberFormatException ignored) {}
+            int amount = split[1] == null ? 1 : Integer.parseInt(split[1]);
 
             ItemStack stack = new ItemStack(mat, Math.max(1, amount));
             net.kyori.adventure.text.Component name = lang.getComponent("entity.decoration");

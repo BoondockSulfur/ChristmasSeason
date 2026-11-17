@@ -326,7 +326,7 @@ public class ChristmasSeason extends JavaPlugin {
 
     private void validateMaterialList(String path) {
         for (String entry : getConfig().getStringList(path)) {
-            String matName = entry.split(":")[0];
+            String matName = LootManager.splitMaterialAmount(entry)[0];
             if (org.bukkit.Material.matchMaterial(matName) == null) {
                 languageManager.logWarning("log.config.unknown-material", matName, path);
             }
@@ -354,12 +354,15 @@ public class ChristmasSeason extends JavaPlugin {
         }
 
         if (backupManager != null) {
+            // Every regular stop during the season writes one; they only matter while the event runs without its database
             int emergencyCount = backupManager.listEmergencyBackups().size();
-            if (emergencyCount > 0) {
+            if (emergencyCount > 0 && isActive() && !dbFile.exists()) {
                 languageManager.logWarning("log.startup.separator");
                 languageManager.logWarning("log.startup.emergency-found-1", emergencyCount);
                 languageManager.logWarning("log.startup.emergency-found-2");
                 languageManager.logWarning("log.startup.separator");
+            } else if (emergencyCount > 0) {
+                debug(emergencyCount + " emergency backup(s) from earlier stops available");
             }
         }
     }

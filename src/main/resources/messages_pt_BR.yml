@@ -1,0 +1,228 @@
+# ========================================
+# ChristmasSeason - Mensagens em português (Brasil)
+# Códigos de cor com '&'. Mensagens de console (log.*) que não estão aqui ficam em inglês.
+# ========================================
+
+prefix: "&b[Xmas]&7"
+no-permission: "&cVocê não tem permissão."
+
+# Comandos - /xmas
+command:
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  players-only: "&cEste comando só pode ser usado dentro do jogo."
+
+  # Aspas necessárias: o YAML interpreta 'on'/'off' como booleanos
+  "on":
+    success: "&aEvento ativado. &7(As funções de neve estão rodando)"
+    restore-running: "&c&lAinda há uma restauração de biomas em andamento! &7Aguarde até terminar."
+    already-active: "&eO ChristmasSeason já está ativo. &7Use '/xmas reload' para reiniciar as funções."
+    activation-running: "&eO ChristmasSeason está sendo ativado agora (backup SAFE). &7Aguarde um momento."
+    backup-failed: "&c&lATENÇÃO: não foi possível criar o backup SAFE! &7Verifique o espaço em disco e as permissões da pasta de backups."
+    snapshot-disabled: "&c&lATENÇÃO: o sistema de snapshots está desativado (enableSnapshot: false)! &cOs biomas são alterados SEM backup - não há restauração automática."
+
+  "off":
+    cleanup: "&7Removendo entidades, itens e baús de presente do evento..."
+    success: "&cEvento desativado. &7(Biomas e neve são restaurados em lotes)"
+    backup-failed: "&c&lATENÇÃO: o backup com data falhou! &7A restauração continua mesmo assim."
+    already-inactive: "&eO ChristmasSeason já está desligado. &7Snapshots deixados por uma restauração anterior são processados de novo, se houver."
+
+  status:
+    message: "&bStatus: {0} &7| Nevasca: {1}"
+    active: "&aLIGADO"
+    inactive: "&cDESLIGADO"
+    region: "&7Proteção de regiões: &f{0}"
+    restoring: "&eRestauração de biomas em andamento: &f{0}"
+    worlds: "&7Mundos com neve: &f{0}"
+    objects: "&7Rastreados: &f{0} &7baús de presente, &f{1} &7decorações, &f{2} &7duendes/elfos, &f{3} &7bonecos de neve"
+    snapshot: "&7Chunks no snapshot: &f{0}"
+    converting: "&eConversão do mundo em andamento: &f{0}"
+    schedule: "&7Agenda: &f{0} &7dias até o início, &f{1} &7dias restantes"
+    gifts-opened: "&7Presentes abertos até agora: &f{0}"
+
+  reload:
+    success: "&aConfiguração e idioma recarregados."
+    error: "&cFalha ao recarregar - veja o console."
+
+  biome:
+    usage: "&b/xmas biome &7<set|clearsnap|status|info|compare|fix-diff|convert-all>"
+    conversion-unavailable: "&cAlterações de bioma indisponíveis: &7'biome.enabled' está desligado ou o banco de snapshots não pôde ser aberto."
+
+    set:
+      usage: "&b/xmas biome set &e<BIOMA> &7[raio_chunks]"
+      unknown-biome: "&cBioma desconhecido."
+      invalid-radius: "&cNúmero inválido para o raio."
+      only-active: "&c/xmas biome set só funciona com o ChristmasSeason ativo. &7Execute '/xmas on' primeiro."
+      success: "&aBioma definido: &e{0} &7chunk(s) agendado(s)."
+
+    restore:
+      disabled: "&c&lEste comando está desativado &7(ele podia travar o servidor). Use '/xmas off' para restaurar os biomas."
+
+    clearsnap:
+      success: "&aSnapshot excluído."
+      failed: "&cNão foi possível excluir o snapshot. &7Detalhes no console."
+      blocked-active: "&c&lERRO: o ChristmasSeason está ativo! &7Excluir o snapshot com os biomas alterados perderia os originais para sempre. Execute '/xmas off' primeiro."
+      no-backup: "&c&lATENÇÃO: nenhum backup disponível! &7Crie um primeiro: '/xmas backup create'"
+
+    status:
+      header: "&7═══ Banco de snapshots ═══"
+      db-inactive: "&c✗ Banco de dados: INATIVO &7(evento inativo ou enableSnapshot: false)"
+      db-active: "&a✓ Banco de dados: ATIVO"
+      db-chunks: "&7  Chunks: &f{0}"
+      db-size: "&7  Tamanho: &f{0} MB"
+      db-error: "&c✗ Erro ao ler o banco de dados: {0}"
+
+    compare:
+      usage: "&b/xmas biome compare &e<ID-backup> &7- compara os biomas atuais com um backup"
+      running: "&7Comparando biomas com o backup... &7Isso pode demorar um pouco."
+      failed: "&c✗ A comparação falhou! Veja o console."
+      header: "&6═══ RESULTADO DA COMPARAÇÃO ═══"
+      backup: "&7Backup: &f{0}"
+      compared: "&7Chunks comparados: &f{0}"
+      identical: "&7Idênticos: &a{0} &7({1}%)"
+      differences: "&7Diferentes: &c{0}"
+      top-header: "&7Top 5 chunks com diferenças:"
+      top-entry: "&7  {0}. &fChunk[{1}, {2}] &7- &c{3} &7células"
+      fix-hint: "&eCorrigir: &f/xmas biome fix-diff {0}"
+      footer: "&6═══════════════════════════"
+
+    fix-diff:
+      usage: "&b/xmas biome fix-diff &e<ID-backup> &7[confirm] - restaura os chunks diferentes a partir de um backup"
+      warning: "&c&lATENÇÃO: &7todos os chunks diferentes serão sobrescritos com os biomas do backup!"
+      confirm: "&eConfirme com: &f/xmas biome fix-diff {0} confirm"
+      running: "&7Corrigindo diferenças... &7Isso pode levar alguns minutos."
+      done: "&a✓ Correção concluída! &7Restaurados: &f{0} &7chunks"
+      failed: "&c✗ A correção falhou! Veja o console."
+
+    info:
+      header: "&6═══ Informações do bioma em &f{0} {1} {2} &6═══"
+      current: "&7Bioma atual: &f{0} &7- com neve natural: {1}&7, com gelo natural: {2}"
+      original: "&7Original (snapshot): &f{0} &7- com neve natural: {1}&7, com gelo natural: {2}"
+      no-snapshot: "&7Nenhum snapshot para este chunk &8(nunca convertido, ou restaurado e apagado)"
+      flags: "&7Excluído: {0} &7| processado nesta sessão: {1} &7| definido manualmente: {2}"
+      range: "&7Faixa Y configurada: &f{0} &7a &f{1}"
+      # Aspas necessárias: o YAML interpreta yes/no como booleanos
+      "yes": "&asim"
+      "no": "&cnão"
+    convert-all:
+      usage: "&b/xmas biome convert-all &e[raio_chunks] [mundo] confirm &7- converte toda a área ao redor do spawn"
+      warning: "&c&lATENÇÃO: &7isso carrega e converte &f{0} &7chunks em &f{1}&7. O banco de snapshots cresce na mesma medida."
+      confirm: "&eConfirme com: &f/xmas biome convert-all {0} {1} confirm"
+      started: "&a✓ Conversão iniciada: &f{0} &7chunks em &f{1}&7. Progresso no console e em '/xmas status'."
+      running: "&eJá há uma conversão em andamento: &f{0} &7- '/xmas biome convert-all cancel' a interrompe."
+      cancelled: "&c✗ Conversão cancelada."
+      only-active: "&cconvert-all só funciona com o ChristmasSeason ativo."
+      not-snow-world: "&cEsse mundo não é um mundo com neve (veja snowWorld/snowWorlds no config.yml)."
+      radius-too-large: "&cO raio {0} é grande demais - são permitidos no máximo &f{1} &cchunks."
+
+  debug:
+    "on": "&a✓ Modo de depuração ativado. &7Dica: '/xmas debug verbose' para ainda mais detalhes."
+    "off": "&c✗ Modo de depuração desativado."
+    verbose-on: "&a✓ Depuração detalhada ativada &7(inclui detalhes dos snapshots de biomas)."
+    verbose-off: "&c✗ Depuração detalhada desativada. &7Os logs de depuração normais continuam ativos."
+
+  storm:
+    usage: "&b/xmas storm &7<on|off|toggle|status|pulse>"
+    "on": "&bNevasca: &aLIGADA"
+    "off": "&bNevasca: &cDESLIGADA"
+    toggle: "&bNevasca: {0}"
+    status: "&bNevasca: {0}"
+    pulse:
+      success: "&bNevasca: pulso de &e{0}&7 s."
+      invalid-duration: "&cNúmero de segundos inválido."
+      world-not-found: "&cMundo de destino não encontrado."
+
+  update:
+    usage: "&b/xmas update &7<check>"
+    checking: "&7Procurando atualizações..."
+    available: "&a&lAtualização disponível! &7Atual: &c{0} &7- Mais recente: &a{1}"
+    links: "&7Download: &f{0} &7| &f{1}"
+    up-to-date: "&a✓ Você está usando a versão mais recente &7({0})."
+    failed: "&c✗ A busca por atualizações falhou. &7Sem conexão com o Modrinth ou o GitHub."
+
+  backup:
+    usage: "&b/xmas backup &7<list|restore|create|clear>"
+    restoring: "&7Restaurando backup..."
+    restored: "&a✓ Backup restaurado!"
+    restore-failed: "&c✗ A restauração falhou! Veja o console."
+    creating: "&7Criando backup..."
+    created: "&a✓ Backup criado!"
+    create-failed: "&c✗ O backup falhou! Veja o console."
+    blocked-active: "&cBackups só podem ser restaurados com o evento desligado. &7Execute '/xmas off' primeiro e aguarde a restauração."
+    clear-confirm: "&c&lATENÇÃO: &7isso exclui &f{0} &7backup(s) com data e de emergência (o SAFE é mantido). Confirme com: &f/xmas backup clear confirm"
+
+  feature:
+    usage: "&b/xmas feature &e<nome> <on|off> &7- liga ou desliga uma função em tempo real (salvo no config.yml)"
+    unknown: "&cFunção desconhecida: &f{0}"
+    status-on: "&7Função &f{0}&7: &aativada"
+    status-off: "&7Função &f{0}&7: &cdesativada"
+    enabled: "&a✓ Função &f{0} &aativada."
+    disabled: "&c✗ Função &f{0} &cdesativada."
+
+  stats:
+    header: "&6═══ Estatísticas de presentes &7(total aberto: &f{0}&7) ═══"
+    entry: "&7  {0}. &f{1} &7- &e{2}"
+    player: "&7{0}: &e{1} &7presentes abertos, &e{2} &7portas do calendário"
+    unknown-player: "&cJogador desconhecido: &f{0}"
+
+# Comandos - /xmasgift
+gift:
+  spawned: "&aPresente colocado!"
+  spawn-failed: "&cNenhum presente colocado aqui &7(há outro baú ao lado)."
+  opened: "&a🎁 Feliz Natal! &7Você já abriu &e{0} &7presente(s)."
+
+# Nomes de entidades e itens
+entity:
+  wichtel: "&aDuende"
+  elf: "&bElfo"
+  snowman: "&fBoneco de neve"
+  decoration: "&aDecoração de Natal"
+  gift-chest: "&c&lPresente de Natal"
+
+# Anúncios
+broadcast:
+  gift-spawned: "&c🎁 Um presente de Natal apareceu em &e{0} &cem &e{1} {2} {3}&c!"
+  gift-opened: "&a🎁 &e{0} &aabriu um presente de Natal em &e{1} {2} {3}&a!"
+  event-activated: "&b❄ &fA temporada de Natal começou! &7Neve, presentes e boa companhia esperam por você."
+  event-deactivated: "&b❄ &fA temporada de Natal acabou. &7Obrigado por comemorar com a gente!"
+
+# Calendário do Advento
+advent:
+  usage: "&b/advent &7[status|<dia>]"
+  disabled: "&cO calendário do Advento está desativado."
+  event-inactive: "&cO calendário do Advento só está disponível durante o evento de Natal."
+  not-in-season: "&cO calendário do Advento vai de {0}.{1}. a {2}.{3}."
+  invalid-day: "&cEscolha um dia entre {0} e {1}."
+  future-day: "&cA porta {0} ainda não pode ser aberta - paciência!"
+  no-catch-up: "&cNeste servidor, portas perdidas não podem ser abertas depois."
+  already-claimed: "&eVocê já abriu a porta {0}."
+  claimed: "&a🎄 Porta {0} aberta! &7Sua recompensa está no seu inventário."
+  broadcast: "&a🎄 &e{0} &aabriu a porta &e{1} &ado calendário do Advento!"
+  status-header: "&6═══ Calendário do Advento &7({0}/{1} portas abertas) ═══"
+  today-claimed: "&7A porta de hoje ({0}) já está aberta."
+  today-open: "&eA porta {0} está esperando por você: &f/advent"
+
+# Aviso de atualização para operadores (os links são adicionados como texto clicável)
+update:
+  header: "&8&l&m                                    "
+  available: "&b&lChristmasSeason &7- &aAtualização disponível!"
+  current: "&7Versão atual: &c{0}"
+  latest: "&7Versão mais recente: &a{0}"
+  download: "&7Download:"
+  footer: "&8&l&m                                    "
+
+# Mensagens de console que os jogadores também veem (o resto fica em inglês)
+log:
+  convert:
+    progress: "Conversão do mundo: {0}/{1} chunks"
+    complete: "Conversão do mundo concluída: {0} chunks em {1} s"
+  backup:
+    cleared: "{0} backup(s) excluído(s)."
+    list-header: "&6=== BACKUPS ==="
+    list-entry: "&7  [{0}] &f{1} &7({2} KB)"
+    list-empty: "&7Nenhum backup disponível."
+    list-footer: "&6================"
+    restore-usage: "&b/xmas backup restore &e<ID> &7[confirm]"
+    invalid-id: "&cID de backup inválido. &7Veja /xmas backup list"
+    restore-confirm: "&aConfirme a restauração:"
+    restore-warning: "&c  O banco de dados atual será substituído!"
+    restore-command: "&e  /xmas backup restore {0} confirm"

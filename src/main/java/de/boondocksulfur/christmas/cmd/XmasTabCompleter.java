@@ -69,6 +69,9 @@ public class XmasTabCompleter implements TabCompleter {
             if (args[0].equalsIgnoreCase("backup") && args[1].equalsIgnoreCase("restore")) {
                 return filter(backupIds(), args[2]);
             }
+            if (args[0].equalsIgnoreCase("backup") && args[1].equalsIgnoreCase("clear")) {
+                return filter(List.of("confirm"), args[2]);
+            }
             if (args[0].equalsIgnoreCase("storm") && args[1].equalsIgnoreCase("pulse")) {
                 return filter(PULSE_SECS, args[2]);
             }

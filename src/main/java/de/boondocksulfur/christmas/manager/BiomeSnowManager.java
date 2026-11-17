@@ -83,8 +83,12 @@ public class BiomeSnowManager {
     /** Chunks set manually via {@code /xmas biome set}; never evicted, never overwritten by the bubble. */
     private final Set<ChunkKey> manualChunks = ConcurrentHashMap.newKeySet();
 
-    /** Chunks known to have a snapshot in the database (saves a query per visit). */
-    private final Set<ChunkKey> knownSnapshotChunks = ConcurrentHashMap.newKeySet();
+    /** Y layout {yStart, yStep, layers} of chunks known to have a snapshot (saves a query per visit). */
+    private final Map<ChunkKey, int[]> knownLayouts = new ConcurrentHashMap<>();
+
+    /** Neighbour chunks whose pre-event surface masks are already stored. */
+    private final Set<ChunkKey> borderRecorded = ConcurrentHashMap.newKeySet();
+    private static final int MAX_BORDER_CACHE = 20000;
 
     /** Retry counter for chunks that were not loaded when their turn came. */
     private final Map<ChunkKey, Integer> chunkRetryCount = new ConcurrentHashMap<>();
@@ -190,7 +194,8 @@ public class BiomeSnowManager {
 
         processedChunks.clear();
         manualChunks.clear();
-        knownSnapshotChunks.clear();
+        knownLayouts.clear();
+        borderRecorded.clear();
         chunkRetryCount.clear();
 
         if (closeDatabase && db != null) {
@@ -323,6 +328,14 @@ public class BiomeSnowManager {
      * @param beforeRestore runs off the main thread before the first chunk changes (may be {@code null})
      */
     public void restoreALLAsync(int perTick, Runnable beforeRestore) {
+        restoreALLAsync(perTick, beforeRestore, false);
+    }
+
+    /**
+     * @param quietIfNothing {@code true} = no warnings when there is nothing to restore (retry after an
+     *                       earlier, partly failed restore while the event is already off)
+     */
+    public void restoreALLAsync(int perTick, Runnable beforeRestore, boolean quietIfNothing) {
         // Two parallel restores would delete each other's chunks and close the database twice
         if (!restoreRunning.compareAndSet(false, true)) {
             lang.logWarning("log.biome.restore-already-running");
@@ -333,6 +346,7 @@ public class BiomeSnowManager {
             db = openExistingDatabase();
             if (db == null) {
                 restoreRunning.set(false);
+                if (quietIfNothing) return;
                 lang.logWarning("log.biome.restore-error-header");
                 lang.logWarning("log.biome.no-snapshot-available");
                 lang.logWarning("log.biome.snapshot-disabled-or-error");
@@ -344,7 +358,8 @@ public class BiomeSnowManager {
         plugin.debug("Clearing caches before restore");
         processedChunks.clear();
         manualChunks.clear();
-        knownSnapshotChunks.clear();
+        knownLayouts.clear();
+        borderRecorded.clear();
         playerPendingChunks.clear();
         chunkRetryCount.clear();
 
@@ -357,7 +372,7 @@ public class BiomeSnowManager {
                     List<BiomeSnapshotDatabase.ChunkCoords> allChunks = database.getAllChunkCoordinates();
                     Set<ChunkKey> restoreSet = new HashSet<>();
                     for (BiomeSnapshotDatabase.ChunkCoords c : allChunks) restoreSet.add(new ChunkKey(c.world, c.x, c.z));
-                    scheduler.runGlobalTask(() -> runRestore(database, allChunks, restoreSet, perTick));
+                    scheduler.runGlobalTask(() -> runRestore(database, allChunks, restoreSet, perTick, quietIfNothing));
                 } catch (SQLException | RuntimeException e) {
                     restoreNotStarted(e);
                 }
@@ -375,8 +390,14 @@ public class BiomeSnowManager {
 
     /** Works off the snapshot list in budgeted batches; runs on the global scheduler. */
     private void runRestore(BiomeSnapshotDatabase database, List<BiomeSnapshotDatabase.ChunkCoords> allChunks,
-                            Set<ChunkKey> restoreSet, int perTick) {
+                            Set<ChunkKey> restoreSet, int perTick, boolean quietIfNothing) {
         final int totalChunks = allChunks.size();
+        if (totalChunks == 0 && quietIfNothing) {
+            database.close();
+            if (db == database) db = null;
+            restoreRunning.set(false);
+            return;
+        }
         lang.logInfo("log.biome.restore-start-header");
         lang.logInfo("log.biome.chunks-in-database", totalChunks);
 
@@ -425,7 +446,8 @@ public class BiomeSnowManager {
 
             processedChunks.clear();
             manualChunks.clear();
-            knownSnapshotChunks.clear();
+            knownLayouts.clear();
+            borderRecorded.clear();
             playerPendingChunks.clear();
             chunkRetryCount.clear();
 
@@ -505,7 +527,7 @@ public class BiomeSnowManager {
                                 chunk = finalWorld.getChunkAt(chunkX, chunkZ);
                                 restoreChunkBiomes3D(finalWorld, chunk, snapshot);
                                 removeWinterBlocks3D(finalWorld, chunk, snapshot);
-                                cleanNeighbourBorders(finalWorld, chunkX, chunkZ, restoreSet, snapshot);
+                                cleanNeighbourBorders(database, finalWorld, chunkX, chunkZ, restoreSet, snapshot);
                                 refreshChunkSafe(finalWorld, chunk);
                                 success = true;
                             }
@@ -698,10 +720,13 @@ public class BiomeSnowManager {
      * blocks of chunks that were never converted (and therefore have no snapshot). After a
      * chunk is restored, the four-block strips of every neighbouring chunk that is not part
      * of the restore are cleaned as well, judged by their current (untouched) biome and
-     * limited to the restored chunk's Y range. Neighbours that are not loaded are skipped.
+     * limited to the restored chunk's Y range. Columns that carried snow/ice before the event
+     * (border masks taken at conversion time) or got some from a player are kept. Neighbours
+     * that are not loaded are skipped. Must run on the restored chunk's thread; the database
+     * is read here, before the neighbour tasks run, because the restore may close it meanwhile.
      */
-    private void cleanNeighbourBorders(World world, int chunkX, int chunkZ, Set<ChunkKey> restoreSet,
-                                       BiomeSnapshotDatabase.BiomeSnapshot3D snapshot) {
+    private void cleanNeighbourBorders(BiomeSnapshotDatabase database, World world, int chunkX, int chunkZ,
+                                       Set<ChunkKey> restoreSet, BiomeSnapshotDatabase.BiomeSnapshot3D snapshot) {
         boolean removeSnow = plugin.getConfig().getBoolean("biome.restore.removeSnowLayers", true);
         boolean removeIce = plugin.getConfig().getBoolean("biome.restore.removeIce", true);
         if (!removeSnow && !removeIce) return;
@@ -722,21 +747,24 @@ public class BiomeSnowManager {
                 final int fromZ = dz == 0 ? 0 : (dz < 0 ? 16 - strip : 0);
                 final int toZ   = dz == 0 ? 16 : (dz < 0 ? 16 : strip);
                 final int fdx = dx, fdz = dz;
+                final byte[] placed = placedMask(database, world, nx, nz);
+                final byte[][] before = borderMasks(database, world, nx, nz);
 
                 scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(world, nx, nz), () -> {
                     if (!world.isChunkLoaded(nx, nz)) return;
                     if (plugin.getRegionIntegration() != null && plugin.getRegionIntegration().isBiomeExcluded(world, nx, nz)) return;
                     int bx = nx << 4, bz = nz << 4;
                     int[] removed = new int[2];
-                    byte[] placed = placedMask(db, world, nx, nz);
                     for (int x = fromX; x < toX; x++) {
                         for (int z = fromZ; z < toZ; z++) {
-                            if (placed != null && (placed[(((x & 15) << 4) | (z & 15)) >> 3] & (1 << ((((x & 15) << 4) | (z & 15)) & 7))) != 0) continue;
+                            if (BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(placed, x, z)) continue;
                             Block top = world.getHighestBlockAt(bx + x, bz + z, org.bukkit.HeightMap.WORLD_SURFACE);
                             if (top.getY() < minY || top.getY() > maxY) continue;
                             Biome current = world.getBiome(bx + x, top.getY(), bz + z);
-                            cleanColumnTop(top, removeSnow && !isNaturallySnowyBiome(current),
-                                    removeIce && !isNaturallyIcyBiome(current), removed);
+                            boolean hadSnow = before != null && BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(before[0], x, z);
+                            boolean hadIce = before != null && BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(before[1], x, z);
+                            cleanColumnTop(top, removeSnow && !hadSnow && !isNaturallySnowyBiome(current),
+                                    removeIce && !hadIce && !isNaturallyIcyBiome(current), removed);
                         }
                     }
                     if (plugin.isDebugMode() && (removed[0] > 0 || removed[1] > 0)) {
@@ -745,6 +773,68 @@ public class BiomeSnowManager {
                 });
             }
         }
+    }
+
+    /** @return pre-event {snow, ice} masks of an unconverted neighbour, or {@code null} if none were taken */
+    private byte[][] borderMasks(BiomeSnapshotDatabase database, World world, int chunkX, int chunkZ) {
+        if (database == null || !database.isOpen()) return null;
+        try {
+            return database.getBorderMasks(world.getName(), chunkX, chunkZ);
+        } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Stores the surface masks of the loaded, not yet converted neighbours of a chunk that is
+     * converted for the first time, before its winter biome can spill snow over the border. Only
+     * neighbours owned by the current thread are read (Folia regions). Existing records win.
+     */
+    private void recordNeighbourMasks(BiomeSnapshotDatabase database, World w, int chunkX, int chunkZ) {
+        if (database == null || !database.isOpen()) return;
+        if (borderRecorded.size() > MAX_BORDER_CACHE) borderRecorded.clear(); // the database ignores duplicates
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                int nx = chunkX + dx, nz = chunkZ + dz;
+                ChunkKey nk = new ChunkKey(w.getName(), nx, nz);
+                if (borderRecorded.contains(nk) || knownLayouts.containsKey(nk)) continue;
+                if (!w.isChunkLoaded(nx, nz) || !Bukkit.isOwnedByCurrentRegion(w, nx, nz)) continue;
+                try {
+                    if (!database.hasChunk(nk.world, nx, nz)) {
+                        byte[][] masks = surfaceMasks(w, nx, nz);
+                        database.saveBorderMasks(nk.world, nx, nz, masks[0], masks[1]);
+                    }
+                    borderRecorded.add(nk);
+                } catch (SQLException e) {
+                    plugin.debug("Could not store border masks of " + nx + "," + nz + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * Columns of a chunk that carry a snow layer / ice on the surface right now.
+     * Must run on the chunk's thread.
+     *
+     * @return {snowMask, iceMask}, 32 bytes each
+     */
+    private byte[][] surfaceMasks(World w, int chunkX, int chunkZ) {
+        byte[] snowMask = new byte[BiomeSnapshotDatabase.MASK_BYTES];
+        byte[] iceMask = new byte[BiomeSnapshotDatabase.MASK_BYTES];
+        int bx = chunkX << 4, bz = chunkZ << 4;
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                Block top = w.getHighestBlockAt(bx + x, bz + z, org.bukkit.HeightMap.WORLD_SURFACE);
+                Material t = top.getType();
+                if (t == Material.SNOW) {
+                    BiomeSnapshotDatabase.BiomeSnapshot3D.setBit(snowMask, x, z);
+                    t = top.getRelative(0, -1, 0).getType();
+                }
+                if (t == Material.ICE) BiomeSnapshotDatabase.BiomeSnapshot3D.setBit(iceMask, x, z);
+            }
+        }
+        return new byte[][]{snowMask, iceMask};
     }
 
     /**
@@ -971,9 +1061,11 @@ public class BiomeSnowManager {
         Biome target = getTargetBiome();
         // Without a snapshot the original biome would be lost; the chunk stays unprocessed and
         // is tried again the next time it is collected
-        if (!snapshotIfAbsent(w, chunk)) return;
-        if (applyUniformBiomeColumn(w, chunk, target)) {
-            placeInstantSnow(w, chunk);
+        int[] layout = snapshotIfAbsent(w, chunk);
+        if (layout == null) return;
+        int[] range = applicableRange(w, layout);
+        if (range != null && applyUniformBiomeColumn(w, chunk, target, layout, range)) {
+            placeInstantSnow(w, chunk, range);
             refreshChunkSafe(w, chunk);
         }
 
@@ -1005,7 +1097,7 @@ public class BiomeSnowManager {
      * time. Restore removes exactly these blocks again where the original biome is
      * not snowy. Must run on the chunk's thread.
      */
-    private void placeInstantSnow(World w, Chunk chunk) {
+    private void placeInstantSnow(World w, Chunk chunk, int[] range) {
         if (!plugin.getConfig().getBoolean("biome.instantSnow.enabled", false)) return;
         double coverage = Math.max(0.0, Math.min(1.0, plugin.getConfig().getDouble("biome.instantSnow.coverage", 0.8)));
         boolean freezeWater = plugin.getConfig().getBoolean("biome.instantSnow.freezeWater", true);
@@ -1017,7 +1109,8 @@ public class BiomeSnowManager {
             for (int z = 0; z < 16; z++) {
                 Block top = w.getHighestBlockAt(bx + x, bz + z); // highest non-air block
                 int y = top.getY();
-                if (y < minChangeY(w) || y >= maxChangeY(w)) continue;
+                // Only inside the range the snapshot covers, so the restore finds these blocks again
+                if (y < range[0] || y >= range[1]) continue;
                 Material type = top.getType();
 
                 if (type == Material.WATER) {
@@ -1040,7 +1133,10 @@ public class BiomeSnowManager {
 
     // ------------------------------------------------------------ convert-all
 
-    private WrappedTask convertTask;
+    /** Largest accepted {@code convert-all} radius (2001 x 2001 chunks). */
+    public static final int MAX_CONVERT_RADIUS = 1000;
+
+    private volatile WrappedTask convertTask;
     private volatile int convertTotal, convertScheduled, convertDone;
 
     /** @return {@code true} while {@code /xmas biome convert-all} is running */
@@ -1063,17 +1159,12 @@ public class BiomeSnowManager {
      */
     public boolean startConvertAll(World w, int radiusChunks, java.util.function.Consumer<String> progress) {
         if (!isConversionAllowed() || convertTask != null) return false;
-        int r = Math.max(1, radiusChunks);
+        final int r = Math.max(1, Math.min(MAX_CONVERT_RADIUS, radiusChunks));
         Location spawn = w.getSpawnLocation();
-        int cx0 = spawn.getBlockX() >> 4, cz0 = spawn.getBlockZ() >> 4;
-
-        final java.util.List<int[]> coords = new java.util.ArrayList<>();
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dz = -r; dz <= r; dz++) {
-                coords.add(new int[]{cx0 + dx, cz0 + dz});
-            }
-        }
-        convertTotal = coords.size();
+        final int cx0 = spawn.getBlockX() >> 4, cz0 = spawn.getBlockZ() >> 4;
+        // Coordinates are derived from the index: no list of millions of entries on the main thread
+        final int side = 2 * r + 1;
+        convertTotal = side * side;
         convertScheduled = 0;
         convertDone = 0;
         final int budget = Math.max(1, plugin.getConfig().getInt("biome.convertAll.perTick", 2));
@@ -1097,9 +1188,9 @@ public class BiomeSnowManager {
         convertTask = scheduler.runGlobalTaskTimer(() -> {
             int planned = 0;
             while (planned < budget && convertScheduled < convertTotal && loading.get() < maxLoading) {
-                int[] c = coords.get(convertScheduled++);
+                int index = convertScheduled++;
                 planned++;
-                final int chunkX = c[0], chunkZ = c[1];
+                final int chunkX = cx0 + index / side - r, chunkZ = cz0 + index % side - r;
                 final Runnable convertOnOwner = () -> scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(w, chunkX, chunkZ), () -> {
                     try {
                         processChunkAt(w, chunkX, chunkZ);
@@ -1243,7 +1334,8 @@ public class BiomeSnowManager {
 
     private int getVerticalStep() {
         // Biome resolution is 4 blocks; a step of 4 gives full coverage
-        return Math.max(1, plugin.getConfig().getInt("biome.verticalStep", CELL));
+        // Stored as one byte in the snapshot header; more than 64 would skip most cells anyway
+        return Math.max(1, Math.min(64, plugin.getConfig().getInt("biome.verticalStep", CELL)));
     }
 
     /**
@@ -1268,40 +1360,67 @@ public class BiomeSnowManager {
         return true;
     }
 
+    /** @return Y layout {yStart, yStep, layers} the current config would snapshot for this world */
+    private int[] configLayout(World w) {
+        int minY = minChangeY(w);
+        int maxY = maxChangeY(w);
+        int yStep = getVerticalStep();
+        int worldMaxY = w.getMaxHeight() - 1;
+        // One layer per step, the last one at or below maxY and never above the world
+        int yLayers = (Math.min(maxY, worldMaxY) - minY) / yStep + 1;
+        return new int[]{minY, yStep, Math.max(1, yLayers)};
+    }
+
     /**
-     * Stores the original biomes of a chunk (configured Y range)
-     * unless a snapshot already exists. Samples one value per 4x4x4 cell.
+     * Y range that may be converted in a chunk: the configured range, limited to the layers
+     * the chunk's snapshot covers. A config change during the event therefore never converts
+     * cells the restore could not reset.
+     *
+     * @return {fromY, toYExclusive}, or {@code null} if the ranges do not overlap
      */
-    private boolean snapshotIfAbsent(World w, Chunk c) {
+    private int[] applicableRange(World w, int[] layout) {
+        int lo = Math.max(layout[0], minChangeY(w));
+        int hi = Math.min(layout[0] + (layout[2] - 1) * layout[1] + 1, maxChangeY(w));
+        return lo < hi ? new int[]{lo, hi} : null;
+    }
+
+    /**
+     * Stores the original biomes of a chunk (configured Y range) unless a snapshot already
+     * exists. Samples one value per 4x4x4 cell.
+     *
+     * @return the Y layout {yStart, yStep, layers} of the chunk's snapshot (the existing one if
+     *         there is one), the config layout when snapshots are disabled, or {@code null} if
+     *         no snapshot could be stored (the chunk must not be converted then)
+     */
+    private int[] snapshotIfAbsent(World w, Chunk c) {
         BiomeSnapshotDatabase database = db;
-        if (database == null) return !plugin.getConfig().getBoolean("biome.enableSnapshot", true);
-        if (!database.isOpen()) return false;
+        if (database == null) {
+            return plugin.getConfig().getBoolean("biome.enableSnapshot", true) ? null : configLayout(w);
+        }
+        if (!database.isOpen()) return null;
 
         ChunkKey key = new ChunkKey(w.getName(), c.getX(), c.getZ());
-        if (knownSnapshotChunks.contains(key)) return true;
+        int[] known = knownLayouts.get(key);
+        if (known != null) return known;
 
         try {
-            if (database.hasChunk(key.world, key.x, key.z)) {
-                knownSnapshotChunks.add(key);
-                return true;
+            int[] stored = database.loadChunkLayout(key.world, key.x, key.z);
+            if (stored != null) {
+                knownLayouts.put(key, stored);
+                return stored;
             }
 
             plugin.verboseDebugLang("log.debug.snapshot.creating", key.x, key.z);
 
-            int minY = minChangeY(w);
-            int maxY = maxChangeY(w);
-            int yStep = getVerticalStep();
-            int yLayers = ((maxY - minY) / yStep) + 1; // inclusive of maxY
+            int[] layout = configLayout(w);
+            int minY = layout[0], yStep = layout[1], yLayers = layout[2];
             Biome[][][] biomes3D = new Biome[yLayers][16][16];
 
             int bx = c.getX() << 4;
             int bz = c.getZ() << 4;
-            int worldMaxY = w.getMaxHeight() - 1;
 
             for (int layer = 0; layer < yLayers; layer++) {
                 int y = minY + (layer * yStep);
-                if (y > worldMaxY) break;
-
                 for (int x = 0; x < 16; x += CELL) {
                     for (int z = 0; z < 16; z += CELL) {
                         Biome biome = w.getBiome(bx + x, y, bz + z);
@@ -1333,24 +1452,14 @@ public class BiomeSnowManager {
 
             // Remember columns that already carry a snow layer or ice on the surface: those
             // existed before the event (natural or player-placed) and are kept on restore
-            byte[] snowMask = new byte[BiomeSnapshotDatabase.MASK_BYTES];
-            byte[] iceMask = new byte[BiomeSnapshotDatabase.MASK_BYTES];
-            for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
-                    Block top = w.getHighestBlockAt(bx + x, bz + z, org.bukkit.HeightMap.WORLD_SURFACE);
-                    Material t = top.getType();
-                    if (t == Material.SNOW) {
-                        BiomeSnapshotDatabase.BiomeSnapshot3D.setBit(snowMask, x, z);
-                        t = top.getRelative(0, -1, 0).getType();
-                    }
-                    if (t == Material.ICE) BiomeSnapshotDatabase.BiomeSnapshot3D.setBit(iceMask, x, z);
-                }
-            }
+            byte[][] masks = surfaceMasks(w, c.getX(), c.getZ());
 
-            database.saveChunk3D(key.world, key.x, key.z, biomes3D, minY, yStep, snowMask, iceMask);
-            knownSnapshotChunks.add(key);
+            database.saveChunk3D(key.world, key.x, key.z, biomes3D, minY, yStep, masks[0], masks[1]);
+            knownLayouts.put(key, layout);
+            // Only on the first conversion: later visits could already see snow that spilled over
+            recordNeighbourMasks(database, w, key.x, key.z);
             plugin.verboseDebugLang("log.debug.snapshot.saved", key.x, key.z, yLayers);
-            return true;
+            return layout;
 
         } catch (SQLException e) {
             long now = System.currentTimeMillis();
@@ -1359,24 +1468,23 @@ public class BiomeSnowManager {
                 lang.logWarning("log.biome.error-saving-snapshot", e.getMessage());
             }
             if (plugin.isDebugMode()) e.printStackTrace();
-            return false;
+            return null;
         }
     }
 
     /**
-     * Sets the target biome on every allowed surface cell of the chunk.
+     * Sets the target biome on every allowed surface cell of the chunk, on the snapshot's
+     * layers inside {@code range}.
      *
      * @return {@code true} if anything changed
      */
-    private boolean applyUniformBiomeColumn(World world, Chunk chunk, Biome target) {
+    private boolean applyUniformBiomeColumn(World world, Chunk chunk, Biome target, int[] layout, int[] range) {
         boolean modified = false;
-        int step = getVerticalStep();
         int bx = chunk.getX() << 4, bz = chunk.getZ() << 4;
-        int minY = minChangeY(world);
-        int maxY = maxChangeY(world);
+        int yStart = layout[0], step = layout[1], layers = layout[2];
 
         // Quick check with nine samples: corners, centre and edge midpoints
-        int sampleY = Math.max(minY, Math.min(64, maxY - 1));
+        int sampleY = Math.max(range[0], Math.min(64, range[1] - 1));
         int correctSamples = 0;
         int[][] samples = {{0,0},{15,0},{0,15},{15,15},{8,8},{0,8},{15,8},{8,0},{8,15}};
         for (int[] s : samples) {
@@ -1388,7 +1496,9 @@ public class BiomeSnowManager {
 
         for (int x = 0; x < 16; x += CELL) {
             for (int z = 0; z < 16; z += CELL) {
-                for (int y = minY; y < maxY; y += step) {
+                for (int layer = 0; layer < layers; layer++) {
+                    int y = yStart + layer * step;
+                    if (y < range[0] || y >= range[1]) continue;
                     Biome currentBiome = world.getBiome(bx + x, y, bz + z);
                     if (currentBiome != target && isBiomeAllowedToChange(currentBiome)) {
                         world.setBiome(bx + x, y, bz + z, target);
@@ -1458,8 +1568,10 @@ public class BiomeSnowManager {
                     if (!isConversionAllowed()) return;
                     if (!w.isChunkLoaded(chunkX, chunkZ)) return;
                     Chunk chunk = w.getChunkAt(chunkX, chunkZ);
-                    if (!snapshotIfAbsent(w, chunk)) return;
-                    if (applyUniformBiomeColumn(w, chunk, target)) {
+                    int[] layout = snapshotIfAbsent(w, chunk);
+                    if (layout == null) return;
+                    int[] range = applicableRange(w, layout);
+                    if (range != null && applyUniformBiomeColumn(w, chunk, target, layout, range)) {
                         refreshChunkSafe(w, chunk);
                     }
                 });
