@@ -32,10 +32,37 @@ public class BiomeCompare {
     private final LanguageManager lang;
     private final FoliaSchedulerHelper scheduler;
 
+    /** Only one compare or fix-diff at a time; both load many chunks. */
+    private final java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private volatile boolean fixRunning;
+
     public BiomeCompare(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
         this.scheduler = plugin.getFoliaScheduler();
+    }
+
+    /**
+     * Reserves the comparison slot.
+     *
+     * @param fix {@code true} for fix-diff (blocks {@code /xmas on} while it runs)
+     * @return {@code false} if a compare or fix-diff is already running
+     */
+    public boolean tryBegin(boolean fix) {
+        if (!running.compareAndSet(false, true)) return false;
+        fixRunning = fix;
+        return true;
+    }
+
+    /** Releases the slot taken by {@link #tryBegin(boolean)}. */
+    public void end() {
+        fixRunning = false;
+        running.set(false);
+    }
+
+    /** @return {@code true} while fix-diff writes biomes */
+    public boolean isFixRunning() {
+        return fixRunning;
     }
 
     /**

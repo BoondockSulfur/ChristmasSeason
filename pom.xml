@@ -9,11 +9,11 @@
     <name>ChristmasSeason</name>
 
     <properties>
-        <!-- Release 21: Bytecode läuft auf Java 21 (1.21.x-Server) und Java 25 (26.x-Server) -->
+        <!-- Release 21: the bytecode runs on Java 21 (1.21.x servers) and Java 25 (26.x servers) -->
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Paper-API für MC 26.x (Jahresversionen; Schema '<mc>.build.N-stable' statt '-R0.1-SNAPSHOT').
-             Eine JAR deckt 1.21.x UND 26.x ab - api-version '1.21' in plugin.yml bleibt das Minimum. -->
+        <!-- Paper API for MC 26.x (scheme '<mc>.build.N-stable' instead of '-R0.1-SNAPSHOT').
+             One JAR covers 1.21.3+ and 26.x; api-version '1.21.3' in plugin.yml is the minimum. -->
         <paper.version>26.1.2.build.72-stable</paper.version>
     </properties>
 
@@ -63,7 +63,7 @@
             <scope>compile</scope>
         </dependency>
 
-        <!-- SQLite JDBC Driver für Biome-Snapshot Datenbank -->
+        <!-- SQLite JDBC driver for the biome snapshot database -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
@@ -72,7 +72,7 @@
     </dependencies>
 
     <build>
-        <!-- Release-Name wie in README/Modrinth: ChristmasSeason-x.y.z.jar -->
+        <!-- Release file name as in README/Modrinth: ChristmasSeason-x.y.z.jar -->
         <finalName>ChristmasSeason-${project.version}</finalName>
         <resources>
             <resource>
@@ -92,7 +92,7 @@
                 <version>3.11.0</version>
             </plugin>
 
-            <!-- Maven Shade Plugin: SQLite und FoliaLib in JAR einbinden -->
+            <!-- Maven Shade Plugin: bundles SQLite, FoliaLib and bStats into the JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -123,8 +123,8 @@
                                     <include>org.bstats:bstats-base</include>
                                 </includes>
                             </artifactSet>
-                            <!-- JAR-Größe: exotische SQLite-Natives ausschließen (Android, FreeBSD,
-                                 32-bit, ppc64). Behalten: Linux/Linux-Musl/Mac/Windows x86_64+aarch64. -->
+                            <!-- JAR size: exclude exotic SQLite natives (Android, FreeBSD, 32-bit, ppc64).
+                                 Kept: Linux/Linux-Musl/Mac/Windows x86_64 and aarch64. -->
                             <filters>
                                 <filter>
                                     <artifact>org.xerial:sqlite-jdbc</artifact>

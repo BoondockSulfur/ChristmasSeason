@@ -3,12 +3,11 @@
 # Renk kodları '&' ile. Burada olmayan konsol mesajları (log.*) İngilizce kalır.
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cYetkin yok."
 
 # Komutlar - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cBu komut yalnızca oyun içinde kullanılabilir."
 
   # Tırnak gerekli, çünkü YAML 'on'/'off' değerlerini mantıksal değer olarak okur
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&lBiyom geri yüklemesi hâlâ sürüyor! &7Lütfen bitmesini bekle."
     already-active: "&eChristmasSeason zaten açık. &7Özellikleri yeniden başlatmak için '/xmas reload' kullan."
     activation-running: "&eChristmasSeason şu anda açılıyor (SAFE yedeği). &7Lütfen biraz bekle."
+    fix-running: "&eBir fix-diff çalışıyor. &7Lütfen bitmesini bekleyin."
     backup-failed: "&c&lUYARI: SAFE yedeği oluşturulamadı! &7Disk alanını ve yedek klasörünün izinlerini kontrol et."
     snapshot-disabled: "&c&lUYARI: Anlık görüntü sistemi kapalı (enableSnapshot: false)! &cBiyomlar YEDEKSİZ değiştiriliyor - otomatik geri yükleme mümkün değil."
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BİYOM> &7[yarıçap_chunk]"
       unknown-biome: "&cBilinmeyen biyom."
       invalid-radius: "&cYarıçap için geçersiz sayı."
+      radius-too-large: "&c{0} yarıçapı çok büyük - en fazla &f{1} &cchunk'a izin verilir."
       only-active: "&c/xmas biome set yalnızca ChristmasSeason açıkken çalışır. &7Önce '/xmas on' çalıştır."
       success: "&aBiyom ayarlandı: &e{0} &7chunk planlandı."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<yedek-ID> &7- mevcut biyomları bir yedekle karşılaştırır"
       running: "&7Biyomlar yedekle karşılaştırılıyor... &7Bu biraz sürebilir."
+      already-running: "&eZaten bir karşılaştırma veya fix-diff çalışıyor. &7Lütfen bitmesini bekleyin."
       failed: "&c✗ Karşılaştırma başarısız! Konsola bak."
       header: "&6═══ KARŞILAŞTIRMA SONUCU ═══"
       backup: "&7Yedek: &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lUYARI: &7Tüm farklı chunk'ların üzerine yedekteki biyomlar yazılacak!"
       confirm: "&eOnaylamak için: &f/xmas biome fix-diff {0} confirm"
       running: "&7Farklar düzeltiliyor... &7Bu birkaç dakika sürebilir."
+      blocked-active: "&c/xmas biome fix-diff yalnızca etkinlik kapalıyken çalışır. &7Önce '/xmas off' komutunu çalıştırın."
       done: "&a✓ Düzeltme tamamlandı! &7Geri yüklenen: &f{0} &7chunk"
       failed: "&c✗ Düzeltme başarısız! Konsola bak."
 
@@ -137,7 +140,7 @@ command:
     available: "&a&lGüncelleme mevcut! &7Mevcut: &c{0} &7- En yeni: &a{1}"
     links: "&7İndir: &f{0} &7| &f{1}"
     up-to-date: "&a✓ En güncel sürümü kullanıyorsun &7({0})."
-    failed: "&c✗ Güncelleme kontrolü başarısız. &7Modrinth veya GitHub ile bağlantı yok."
+    failed: "&c✗ Güncelleme kontrolü başarısız. &7Modrinth ile bağlantı yok."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -209,6 +212,31 @@ update:
   latest: "&7En yeni sürüm: &a{0}"
   download: "&7İndir:"
   footer: "&8&l&m                                    "
+
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- bir yaratık türünü kendin için aç veya kapat"
+  status-header: "&6&lSenin için Noel yaratıkları:"
+  status-line: "&7{0}: {1}"
+  state-on: "&aaktif"
+  state-off: "&ckapalı"
+  opted-out: "&7&f{0} &7senin için kapatıldı."
+  opted-in: "&7Senin için yeniden aktif: &f{0}&7."
+  category:
+    wichtel: "Noel cüceleri"
+    elves: "Elfler"
+    snowmen: "Kardan adamlar"
+    all: "tüm Noel yaratıkları"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aBir Noel cücesi ayakkabı bağcıklarını birbirine bağladı!"
+  elves:
+    return-loot: "&bBir elf eşyalarından birini geri getirdi!"
+    heal: "&bBir elfin büyüsü yaralarını hafifletiyor."
+    treat: "&bBir elf senin için bir şeyler pişirdi!"
+    gift-trail: "&bBir elf sana bir hediyenin yolunu gösteriyor!"
 
 # Oyuncuların da gördüğü konsol mesajları (geri kalanı İngilizce kalır)
 log:

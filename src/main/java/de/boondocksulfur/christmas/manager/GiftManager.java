@@ -122,6 +122,21 @@ public class GiftManager {
     }
 
     /** @return {@code true} if a tracked gift chest stands at this position (used by the protection listener) */
+    /** @return the closest tracked gift within {@code maxDistance} blocks in the same world, or {@code null} */
+    public Location nearestGift(Location from, double maxDistance) {
+        Location best = null;
+        double bestSq = maxDistance * maxDistance;
+        for (Location gift : trackedGifts) {
+            if (gift.getWorld() == null || !gift.getWorld().equals(from.getWorld())) continue;
+            double d = gift.distanceSquared(from);
+            if (d <= bestSq) {
+                bestSq = d;
+                best = gift;
+            }
+        }
+        return best == null ? null : best.clone();
+    }
+
     public boolean isGiftChest(Location loc) {
         return loc != null && trackedGifts.contains(loc);
     }

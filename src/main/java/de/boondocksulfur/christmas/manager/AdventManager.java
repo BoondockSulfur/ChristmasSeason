@@ -7,7 +7,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
 import java.io.IOException;
@@ -116,12 +115,6 @@ public class AdventManager {
 
     public boolean hasClaimed(UUID player, int day) {
         return getClaimedDays(player).contains(day);
-    }
-
-    /** @return {@code true} if the player has already claimed today's door (or there is none) */
-    public boolean hasClaimedToday(UUID player) {
-        int day = currentDay();
-        return day < 0 || hasClaimed(player, day);
     }
 
     /**

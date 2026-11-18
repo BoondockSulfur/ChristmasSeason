@@ -6,12 +6,16 @@ import org.bukkit.Bukkit;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.World;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import de.boondocksulfur.christmas.cmd.AdventCommand;
 import de.boondocksulfur.christmas.cmd.XmasCommand;
 import de.boondocksulfur.christmas.cmd.XmasGiftCommand;
+import de.boondocksulfur.christmas.cmd.XmasOptOutCommand;
 import de.boondocksulfur.christmas.cmd.XmasTabCompleter;
 import de.boondocksulfur.christmas.integration.PlaceholderIntegration;
 import de.boondocksulfur.christmas.integration.RegionIntegration;
@@ -51,6 +55,7 @@ public class ChristmasSeason extends JavaPlugin {
     private StatsManager statsManager;
     private AdventManager adventManager;
     private PlaceholderIntegration placeholderIntegration;
+    private OptOutManager optOutManager;
 
     private volatile boolean debugMode = false;
     private volatile boolean verboseDebugMode = false;
@@ -64,6 +69,7 @@ public class ChristmasSeason extends JavaPlugin {
 
         this.foliaScheduler    = new FoliaSchedulerHelper(this);
         this.languageManager   = new LanguageManager(this);
+        loadMobConfig();
         this.backupManager     = new BiomeSnapshotBackup(this);
         this.updateChecker     = new UpdateChecker(this);
         this.biomeCompare      = new BiomeCompare(this);
@@ -79,6 +85,7 @@ public class ChristmasSeason extends JavaPlugin {
         this.lootManager       = new LootManager(this);
         this.statsManager      = new StatsManager(this);
         this.adventManager     = new AdventManager(this);
+        this.optOutManager     = new OptOutManager(this);
         validateConfig();
 
         getCommand("xmas").setExecutor(new XmasCommand(this));
@@ -87,6 +94,9 @@ public class ChristmasSeason extends JavaPlugin {
         AdventCommand adventCommand = new AdventCommand(this);
         getCommand("advent").setExecutor(adventCommand);
         getCommand("advent").setTabCompleter(adventCommand);
+        XmasOptOutCommand optOutCommand = new XmasOptOutCommand(this);
+        getCommand("xmasoptout").setExecutor(optOutCommand);
+        getCommand("xmasoptout").setTabCompleter(optOutCommand);
 
         Bukkit.getPluginManager().registerEvents(new GiftProtectionListener(this), this);
         Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
@@ -98,6 +108,8 @@ public class ChristmasSeason extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new ChunkSnowListener(this), this);
         Bukkit.getPluginManager().registerEvents(new PlayerSnowBubbleListener(this), this);
         Bukkit.getPluginManager().registerEvents(new UpdateNotificationListener(this), this);
+        Bukkit.getPluginManager().registerEvents(optOutManager, this);
+        optOutManager.loadOnlinePlayers();
 
         new org.bstats.bukkit.Metrics(this, 30930);
 
@@ -136,6 +148,67 @@ public class ChristmasSeason extends JavaPlugin {
     // ------------------------------------------------------------ lifecycle
 
     public boolean isActive() { return getConfig().getBoolean("active", false); }
+
+    // ------------------------------------------------------------ mobs.yml
+
+    /** Sections that live in mobs.yml since 2.5.0 (they used to be part of config.yml). */
+    private static final String[] MOB_SECTIONS = {"spawning", "wichtel", "elves", "snowmen"};
+    private volatile YamlConfiguration mobConfig;
+
+    /** Settings of Wichtel, elves and snowmen; missing keys fall back to the bundled mobs.yml. */
+    public FileConfiguration getMobConfig() {
+        return mobConfig;
+    }
+
+    public void saveMobConfig() {
+        try {
+            mobConfig.save(new File(getDataFolder(), "mobs.yml"));
+        } catch (java.io.IOException e) {
+            getLogger().warning("Could not save mobs.yml: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Loads mobs.yml. On the first start after an update the mob sections of config.yml are
+     * moved over, so existing settings are kept and the new file shows every option.
+     */
+    private void loadMobConfig() {
+        File file = new File(getDataFolder(), "mobs.yml");
+        boolean created = !file.exists();
+        if (created) saveResource("mobs.yml", false);
+
+        YamlConfiguration cfg = YamlConfiguration.loadConfiguration(file);
+        try (java.io.Reader in = new java.io.InputStreamReader(
+                Objects.requireNonNull(getResource("mobs.yml")), java.nio.charset.StandardCharsets.UTF_8)) {
+            cfg.setDefaults(YamlConfiguration.loadConfiguration(in));
+        } catch (java.io.IOException e) {
+            getLogger().warning("Could not read the bundled mobs.yml: " + e.getMessage());
+        }
+        mobConfig = cfg;
+        if (created) migrateMobSections();
+    }
+
+    private void migrateMobSections() {
+        FileConfiguration main = getConfig();
+        // Elves used to inherit the Wichtel lifetime when they had none of their own
+        boolean elvesInheritLifetime = main.isSet("wichtel.lifetimeSeconds") && !main.isSet("elves.lifetimeSeconds");
+        boolean moved = false;
+        for (String section : MOB_SECTIONS) {
+            ConfigurationSection old = main.getConfigurationSection(section);
+            if (old == null) continue;
+            for (String key : old.getKeys(true)) {
+                if (old.isConfigurationSection(key) || key.equals("stealOnlyDecorations")) continue;
+                mobConfig.set(section + "." + key, old.get(key));
+            }
+            main.set(section, null);
+            moved = true;
+        }
+        if (!moved) return;
+        if (elvesInheritLifetime) mobConfig.set("elves.lifetimeSeconds", mobConfig.getInt("wichtel.lifetimeSeconds"));
+        saveMobConfig();
+        saveConfig();
+        languageManager.logInfo("log.config.mobs-migrated");
+    }
 
     /** Persists the active flag ({@code /xmas on|off}). */
     public void setActive(boolean active) {
@@ -201,6 +274,7 @@ public class ChristmasSeason extends JavaPlugin {
     /** {@code /xmas reload}: reloads config and language, restarts all managers. */
     public void reloadAll() {
         reloadConfig();
+        loadMobConfig();
         languageManager.reload();
         lootManager.reload();
         validateConfig();
@@ -278,9 +352,9 @@ public class ChristmasSeason extends JavaPlugin {
      * the check (only the world cap applies). Must run on the player's thread.
      */
     public boolean isNearCapReached(Player player, String configKey, Predicate<Entity> matcher) {
-        int max = getConfig().getInt(configKey, 0);
+        int max = mobConfig.getInt(configKey, 0);
         if (max <= 0) return false;
-        double r = Math.max(8, getConfig().getInt("spawning.nearRadius", 48));
+        double r = Math.max(8, mobConfig.getInt("spawning.nearRadius", 48));
         int count = 0;
         for (Entity e : player.getNearbyEntities(r, r, r)) {
             if (matcher.test(e) && ++count >= max) return true;
@@ -431,6 +505,7 @@ public class ChristmasSeason extends JavaPlugin {
     public BiomeSnowManager getBiomeSnowManager() { return biomeSnowManager; }
     public WichtelManager getWichtelManager() { return wichtelManager; }
     public SnowmanManager getSnowmanManager() { return snowmanManager; }
+    public OptOutManager getOptOutManager() { return optOutManager; }
     public SnowstormManager getSnowstormManager() { return snowstormManager; }
     public DecorationManager getDecorationManager() { return decorationManager; }
     public EventController getEventController() { return eventController; }
@@ -453,13 +528,6 @@ public class ChristmasSeason extends JavaPlugin {
     public void debug(String message) {
         if (debugMode) {
             getLogger().info("[DEBUG] " + LanguageManager.stripColors(message));
-        }
-    }
-
-    /** Debug log from a language key. */
-    public void debugLang(String key, Object... replacements) {
-        if (debugMode) {
-            getLogger().info("[DEBUG] " + LanguageManager.stripColors(languageManager.getMessage(key, replacements)));
         }
     }
 

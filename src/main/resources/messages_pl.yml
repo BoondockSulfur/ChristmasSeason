@@ -3,12 +3,11 @@
 # Kody kolorów z '&'. Komunikaty konsoli (log.*), których tu nie ma, pozostają po angielsku.
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cBrak uprawnień."
 
 # Komendy - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cTej komendy można używać tylko w grze."
 
   # Cudzysłów wymagany, bo YAML odczytuje 'on'/'off' jako wartości logiczne
@@ -17,13 +16,14 @@ command:
     restore-running: "&c&lPrzywracanie biomów wciąż trwa! &7Poczekaj, aż się zakończy."
     already-active: "&eChristmasSeason jest już włączony. &7Użyj '/xmas reload', aby zrestartować funkcje."
     activation-running: "&eChristmasSeason jest właśnie włączany (kopia SAFE). &7Poczekaj chwilę."
+    fix-running: "&eTrwa fix-diff. &7Poczekaj, aż się zakończy."
     backup-failed: "&c&lUWAGA: nie udało się utworzyć kopii SAFE! &7Sprawdź miejsce na dysku i uprawnienia folderu kopii."
     snapshot-disabled: "&c&lUWAGA: system snapshotów jest wyłączony (enableSnapshot: false)! &cBiomy są zmieniane BEZ kopii - automatyczne przywrócenie nie jest możliwe."
 
   "off":
     cleanup: "&7Usuwanie encji, przedmiotów i skrzyń z prezentami z wydarzenia..."
     success: "&cWydarzenie wyłączone. &7(Biomy i śnieg są przywracane partiami)"
-    backup-failed: "&c&lUWAGA: kopia z datą nie powiodła się! &7Przywracanie i tak trwa dalej."
+    backup-failed: "&c&lUWAGA: kopia ze znacznikiem czasu nie powiodła się! &7Przywracanie i tak trwa dalej."
     already-inactive: "&eChristmasSeason jest już wyłączony. &7Snapshoty pozostałe po wcześniejszym przywracaniu zostaną ponownie zresetowane, jeśli istnieją."
 
   status:
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BIOM> &7[promień_chunki]"
       unknown-biome: "&cNieznany biom."
       invalid-radius: "&cNieprawidłowa liczba dla promienia."
+      radius-too-large: "&cPromień {0} jest za duży - dozwolone jest maksymalnie &f{1} &cchunków."
       only-active: "&c/xmas biome set działa tylko, gdy ChristmasSeason jest włączony. &7Najpierw użyj '/xmas on'."
       success: "&aBiom ustawiony: zaplanowano &e{0} &7chunk(ów)."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<ID-kopii> &7- porównuje obecne biomy z kopią"
       running: "&7Porównywanie biomów z kopią... &7To może chwilę potrwać."
+      already-running: "&ePorównanie lub fix-diff już trwa. &7Poczekaj, aż się zakończy."
       failed: "&c✗ Porównanie nie powiodło się! Zobacz konsolę."
       header: "&6═══ WYNIK PORÓWNANIA ═══"
       backup: "&7Kopia: &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lUWAGA: &7wszystkie różniące się chunki zostaną nadpisane biomami z kopii!"
       confirm: "&ePotwierdź: &f/xmas biome fix-diff {0} confirm"
       running: "&7Naprawianie różnic... &7To może potrwać kilka minut."
+      blocked-active: "&c/xmas biome fix-diff działa tylko przy wyłączonym wydarzeniu. &7Najpierw użyj '/xmas off'."
       done: "&a✓ Naprawa zakończona! &7Przywrócono: &f{0} &7chunków"
       failed: "&c✗ Naprawa nie powiodła się! Zobacz konsolę."
 
@@ -135,9 +138,9 @@ command:
     usage: "&b/xmas update &7<check>"
     checking: "&7Sprawdzanie aktualizacji..."
     available: "&a&lDostępna aktualizacja! &7Obecna: &c{0} &7- Najnowsza: &a{1}"
-    links: "&7Pobieranie: &f{0} &7| &f{1}"
+    links: "&7Pobierz: &f{0} &7| &f{1}"
     up-to-date: "&a✓ Używasz najnowszej wersji &7({0})."
-    failed: "&c✗ Sprawdzanie aktualizacji nie powiodło się. &7Brak połączenia z Modrinth lub GitHub."
+    failed: "&c✗ Sprawdzanie aktualizacji nie powiodło się. &7Brak połączenia z Modrinth."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -194,7 +197,7 @@ advent:
   invalid-day: "&cWybierz dzień od {0} do {1}."
   future-day: "&cOkienko {0} nie jest jeszcze otwarte - cierpliwości!"
   no-catch-up: "&cNa tym serwerze nie można później otwierać przegapionych okienek."
-  already-claimed: "&eOkienko {0} jest już otwarte."
+  already-claimed: "&eOkienko {0} zostało już przez ciebie otwarte."
   claimed: "&a🎄 Okienko {0} otwarte! &7Nagroda jest w twoim ekwipunku."
   broadcast: "&a🎄 &e{0} &aotworzył okienko &e{1} &akalendarza adwentowego!"
   status-header: "&6═══ Kalendarz adwentowy &7({0}/{1} otwartych okienek) ═══"
@@ -207,8 +210,33 @@ update:
   available: "&b&lChristmasSeason &7- &aDostępna aktualizacja!"
   current: "&7Obecna wersja: &c{0}"
   latest: "&7Najnowsza wersja: &a{0}"
-  download: "&7Pobieranie:"
+  download: "&7Pobierz:"
   footer: "&8&l&m                                    "
+
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- włącz lub wyłącz dany typ stworzeń dla siebie"
+  status-header: "&6&lŚwiąteczne stworzenia dla ciebie:"
+  status-line: "&7{0}: {1}"
+  state-on: "&aaktywne"
+  state-off: "&cwyłączone"
+  opted-out: "&7Wyłączono dla ciebie: &f{0}&7."
+  opted-in: "&7Znów aktywne dla ciebie: &f{0}&7."
+  category:
+    wichtel: "Skrzaty"
+    elves: "Elfy"
+    snowmen: "Bałwany"
+    all: "wszystkie świąteczne stworzenia"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aSkrzat związał ci sznurówki!"
+  elves:
+    return-loot: "&bElf oddał ci jeden z twoich przedmiotów!"
+    heal: "&bMagia elfa koi twoje rany."
+    treat: "&bElf upiekł coś dla ciebie!"
+    gift-trail: "&bElf pokazuje ci drogę do prezentu!"
 
 # Komunikaty konsoli widoczne też dla graczy (reszta pozostaje po angielsku)
 log:

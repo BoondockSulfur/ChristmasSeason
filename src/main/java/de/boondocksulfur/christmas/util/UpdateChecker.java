@@ -15,7 +15,7 @@ import java.net.URL;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Checks Modrinth (with GitHub releases as fallback) for a newer release.
+ * Checks Modrinth for a newer release; the notice links to Modrinth and CurseForge.
  *
  * <p>Runs asynchronously, once after startup and on demand via {@code /xmas update check}.
  * Operators are notified on join with clickable download links. Can be disabled with
@@ -28,12 +28,10 @@ public class UpdateChecker {
     private final String currentVersion;
 
     private static final String MODRINTH_SLUG = "christmas-season";
-    private static final String GITHUB_REPO = "BoondockSulfur/ChristmasSeason";
 
     private static final String MODRINTH_API = "https://api.modrinth.com/v2/project/" + MODRINTH_SLUG + "/version";
-    private static final String GITHUB_API = "https://api.github.com/repos/" + GITHUB_REPO + "/releases/latest";
     private static final String MODRINTH_URL = "https://modrinth.com/plugin/" + MODRINTH_SLUG;
-    private static final String GITHUB_URL = "https://github.com/" + GITHUB_REPO;
+    private static final String CURSEFORGE_URL = "https://www.curseforge.com/minecraft/bukkit-plugins/christmas-season";
 
     private volatile String latestVersion = null;
     private volatile boolean updateAvailable = false;
@@ -73,10 +71,6 @@ public class UpdateChecker {
                 lastCheck = now;
 
                 String version = checkModrinth();
-                if (version == null) {
-                    plugin.debug("Update check: Modrinth unavailable, trying GitHub");
-                    version = checkGitHub();
-                }
                 if (version == null) {
                     lang.logWarning("log.update.check-failed");
                     return new UpdateResult(false, null, currentVersion);
@@ -166,24 +160,6 @@ public class UpdateChecker {
         }
     }
 
-    /** Latest GitHub release tag (leading "v" stripped). */
-    private String checkGitHub() {
-        try {
-            String json = fetch(GITHUB_API);
-            if (json == null) return null;
-            String tag = stringField(json, "tag_name", 0);
-            if (tag == null) {
-                plugin.debug("GitHub: tag_name not found");
-                return null;
-            }
-            if (tag.startsWith("v") || tag.startsWith("V")) tag = tag.substring(1);
-            plugin.debug("GitHub: latest release = " + tag);
-            return tag;
-        } catch (Exception e) {
-            plugin.debug("GitHub API error: " + e.getMessage());
-            return null;
-        }
-    }
 
     /** Semantic comparison of MAJOR.MINOR.PATCH strings. */
     private boolean isNewerVersion(String newVersion, String currentVersion) {
@@ -238,7 +214,7 @@ public class UpdateChecker {
         player.sendMessage(lang.getComponent("update.latest", latestVersion));
         player.sendMessage(lang.getComponent("update.download"));
         player.sendMessage(link("Modrinth", MODRINTH_URL));
-        player.sendMessage(link("GitHub", GITHUB_URL + "/releases"));
+        player.sendMessage(link("CurseForge", CURSEFORGE_URL));
         player.sendMessage(lang.getComponent("update.footer"));
     }
 
@@ -246,7 +222,7 @@ public class UpdateChecker {
     public void sendConsoleNotification() {
         if (!updateAvailable || latestVersion == null) return;
         lang.logInfo("log.update.available", currentVersion, latestVersion);
-        lang.logInfo("log.update.download", MODRINTH_URL, GITHUB_URL + "/releases");
+        lang.logInfo("log.update.download", MODRINTH_URL, CURSEFORGE_URL);
     }
 
     /** Schedules the startup check (five seconds after enable) if enabled. */
@@ -266,7 +242,7 @@ public class UpdateChecker {
     public String getLatestVersion() { return latestVersion; }
     public String getCurrentVersion() { return currentVersion; }
     public String getModrinthUrl() { return MODRINTH_URL; }
-    public String getGitHubUrl() { return GITHUB_URL; }
+    public String getCurseForgeUrl() { return CURSEFORGE_URL; }
 
     /** Result of one update check. */
     public static class UpdateResult {

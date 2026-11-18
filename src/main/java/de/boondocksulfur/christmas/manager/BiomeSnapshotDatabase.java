@@ -305,6 +305,11 @@ public class BiomeSnapshotDatabase {
             mask[i >> 3] |= (byte) (1 << (i & 7));
         }
 
+        public static void clearBit(byte[] mask, int x, int z) {
+            int i = ((x & 15) << 4) | (z & 15);
+            mask[i >> 3] &= (byte) ~(1 << (i & 7));
+        }
+
         /** @return biome stored for the layer containing {@code y}, or {@code null} outside the stored range */
         public Biome getBiomeAtY(int x, int z, int y) {
             int layerIndex = (y - yStart) / yStep;

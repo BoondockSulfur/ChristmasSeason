@@ -171,10 +171,6 @@ public class LanguageManager {
                 LegacyComponentSerializer.legacySection().deserialize(legacy));
     }
 
-    public String getCurrentLanguage() {
-        return currentLanguage;
-    }
-
     /** Reloads the language file. */
     public void reload() {
         loadLanguage();

@@ -3,12 +3,11 @@
 # 颜色代码使用 '&'。此处未列出的控制台消息（log.*）保持英文。
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&c你没有权限。"
 
 # 命令 - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&c此命令只能在游戏内使用。"
 
   # 需要引号，因为 YAML 会把 'on'/'off' 读成布尔值
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&l生物群系仍在恢复中！&7请等待恢复完成。"
     already-active: "&eChristmasSeason 已经开启。&7使用 '/xmas reload' 重启各项功能。"
     activation-running: "&eChristmasSeason 正在开启（SAFE 备份中）。&7请稍候。"
+    fix-running: "&e正在执行 fix-diff。&7请等待其完成。"
     backup-failed: "&c&l警告：无法创建 SAFE 备份！&7请检查磁盘空间和备份文件夹的权限。"
     snapshot-disabled: "&c&l警告：快照系统已禁用（enableSnapshot: false）！&c生物群系将在没有备份的情况下被修改 - 无法自动恢复。"
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<生物群系> &7[半径_区块]"
       unknown-biome: "&c未知的生物群系。"
       invalid-radius: "&c半径数值无效。"
+      radius-too-large: "&c半径 {0} 过大 - 最多允许 &f{1} &c个区块。"
       only-active: "&c/xmas biome set 仅在 ChristmasSeason 开启时可用。&7请先执行 '/xmas on'。"
       success: "&a生物群系已设置：已安排 &e{0} &7个区块。"
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<备份ID> &7- 将当前生物群系与备份比较"
       running: "&7正在将生物群系与备份比较... &7这可能需要一些时间。"
+      already-running: "&e已有比较或 fix-diff 正在运行。&7请等待其完成。"
       failed: "&c✗ 比较失败！请查看控制台。"
       header: "&6═══ 比较结果 ═══"
       backup: "&7备份：&f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&l警告：&7所有不同的区块都将被备份中的生物群系覆盖！"
       confirm: "&e确认请输入：&f/xmas biome fix-diff {0} confirm"
       running: "&7正在修复差异... &7这可能需要几分钟。"
+      blocked-active: "&c/xmas biome fix-diff 只能在活动关闭时使用。&7请先执行 '/xmas off'。"
       done: "&a✓ 修复完成！&7已恢复：&f{0} &7个区块"
       failed: "&c✗ 修复失败！请查看控制台。"
 
@@ -127,7 +130,7 @@ command:
     toggle: "&b暴风雪：{0}"
     status: "&b暴风雪：{0}"
     pulse:
-      success: "&b暴风雪：持续 &e{0}&7 秒。"
+      success: "&b短时暴风雪：持续 &e{0}&7 秒。"
       invalid-duration: "&c秒数无效。"
       world-not-found: "&c找不到目标世界。"
 
@@ -137,7 +140,7 @@ command:
     available: "&a&l有可用更新！&7当前：&c{0} &7- 最新：&a{1}"
     links: "&7下载：&f{0} &7| &f{1}"
     up-to-date: "&a✓ 你正在使用最新版本 &7（{0}）。"
-    failed: "&c✗ 检查更新失败。&7无法连接 Modrinth 或 GitHub。"
+    failed: "&c✗ 检查更新失败。&7无法连接 Modrinth。"
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -209,6 +212,31 @@ update:
   latest: "&7最新版本：&a{0}"
   download: "&7下载："
   footer: "&8&l&m                                    "
+
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- 为自己开启或关闭某类生物"
+  status-header: "&6&l你的节日生物："
+  status-line: "&7{0}：{1}"
+  state-on: "&a已开启"
+  state-off: "&c已关闭"
+  opted-out: "&7你已关闭&f{0}&7。"
+  opted-in: "&7已为你重新开启：&f{0}&7。"
+  category:
+    wichtel: "小矮人"
+    elves: "精灵"
+    snowmen: "雪人"
+    all: "所有节日生物"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&a一个小矮人把你的鞋带系在了一起！"
+  elves:
+    return-loot: "&b一只精灵把你的一件物品送回来了！"
+    heal: "&b精灵的魔法抚平了你的伤口。"
+    treat: "&b一只精灵为你烤了点心！"
+    gift-trail: "&b一只精灵为你指引通往礼物的路！"
 
 # 玩家也能看到的控制台消息（其余保持英文）
 log:

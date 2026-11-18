@@ -1,7 +1,9 @@
 package de.boondocksulfur.christmas.manager;
 
 import org.bukkit.*;
+import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Snowball;
 import org.bukkit.entity.Snowman;
@@ -22,7 +24,6 @@ import java.util.UUID;
 public class SnowmanManager {
 
     public static final String TAG = "XMAS_SNOWMAN";
-    public static final String SNOWBALL_TAG = "XMAS_SNOWBALL";
 
     private final ChristmasSeason plugin;
     private final LanguageManager lang;
@@ -42,7 +43,7 @@ public class SnowmanManager {
 
     public void start() {
         stop();
-        if (!plugin.getConfig().getBoolean("snowmen.enabled", true)) return;
+        if (!plugin.getMobConfig().getBoolean("snowmen.enabled", true)) return;
         plugin.debug("SnowmanManager started (per-player spawns, per-entity AI)");
     }
 
@@ -61,18 +62,19 @@ public class SnowmanManager {
 
     /** Starts snowman spawning for a player on the player's entity scheduler. */
     public void startPlayerSpawning(Player player) {
-        if (!plugin.getConfig().getBoolean("snowmen.enabled", true)) return;
+        if (!plugin.getMobConfig().getBoolean("snowmen.enabled", true)) return;
 
         UUID uuid = player.getUniqueId();
         WrappedTask oldTask = playerSpawnTasks.remove(uuid);
         if (oldTask != null) oldTask.cancel();
 
-        int interval = Math.max(5, plugin.getConfig().getInt("snowmen.spawnIntervalSeconds", 30));
+        int interval = Math.max(5, plugin.getMobConfig().getInt("snowmen.spawnIntervalSeconds", 30));
         WrappedTask task = scheduler.runForEntityTimer(player, () -> {
             if (!player.isOnline() || !player.isValid()) {
                 stopPlayerSpawning(player);
                 return;
             }
+            if (plugin.getOptOutManager().isOptedOut(player, OptOutManager.Category.SNOWMEN)) return;
             spawnSnowmanNearPlayer(player);
         }, () -> playerSpawnTasks.remove(uuid), 40L, interval * 20L);
 
@@ -155,7 +157,7 @@ public class SnowmanManager {
         World w = player.getWorld();
         if (!plugin.isSnowWorld(w)) return;
 
-        final int max = plugin.getConfig().getInt("snowmen.maxPerWorld", 6);
+        final int max = plugin.getMobConfig().getInt("snowmen.maxPerWorld", 6);
         if (countIn(w) >= max) return;
         if (plugin.isNearCapReached(player, "snowmen.maxNearPlayer", e -> isEventSnowman(e))) return;
 
@@ -185,7 +187,7 @@ public class SnowmanManager {
 
     /** Removes the golem after {@code snowmen.lifetimeSeconds} (0 = never). */
     private void scheduleLifetime(Snowman snowman) {
-        int lifetime = plugin.getConfig().getInt("snowmen.lifetimeSeconds", 600);
+        int lifetime = plugin.getMobConfig().getInt("snowmen.lifetimeSeconds", 600);
         if (lifetime <= 0) return;
         UUID id = snowman.getUniqueId();
         Runnable cleanup = () -> {
@@ -201,12 +203,18 @@ public class SnowmanManager {
         }, cleanup, lifetime * 20L);
     }
 
-    /** Per-golem AI on the entity scheduler: throws a snowball at the nearest player in range. */
+    /**
+     * Per-golem AI on the entity scheduler: throws a snowball at the nearest player or hostile
+     * mob in range and sight. The vanilla targeting is switched off (see
+     * {@code SnowmanDamageListener}), so this task alone sets the pace. Hits deal no damage.
+     */
     private void startEntityAttackTask(Snowman snowman) {
         UUID snowmanId = snowman.getUniqueId();
-        double range = plugin.getConfig().getDouble("snowmen.range", 12.0);
-        double chance = plugin.getConfig().getDouble("snowmen.attackChance", 0.35);
-        int attackInterval = Math.max(1, plugin.getConfig().getInt("snowmen.attackIntervalSeconds", 5));
+        double range = plugin.getMobConfig().getDouble("snowmen.range", 12.0);
+        double chance = plugin.getMobConfig().getDouble("snowmen.attackChance", 0.5);
+        int attackInterval = Math.max(1, plugin.getMobConfig().getInt("snowmen.attackIntervalSeconds", 3));
+        boolean attackPlayers = plugin.getMobConfig().getBoolean("snowmen.attackPlayers", true);
+        boolean attackMobs = plugin.getMobConfig().getBoolean("snowmen.attackMobs", true);
 
         WrappedTask task = scheduler.runForEntityTimer(snowman, () -> {
             if (!snowman.isValid() || snowman.isDead()) {
@@ -218,27 +226,34 @@ public class SnowmanManager {
 
             if (random.nextDouble() > chance) return;
 
-            Player target = null;
-            double bestDistSq = Double.MAX_VALUE;
-            for (Player p : snowman.getWorld().getPlayers()) {
-                // Spectators, and players with the bypass permission, are never targeted
-                if (p.getGameMode() == org.bukkit.GameMode.SPECTATOR || p.hasPermission("xmas.bypass.snowmen")) continue;
-                double distSq = p.getLocation().distanceSquared(snowman.getLocation());
-                if (distSq <= range * range && distSq < bestDistSq) {
+            LivingEntity target = null;
+            double bestDistSq = range * range;
+            for (Entity e : snowman.getNearbyEntities(range, range, range)) {
+                if (!(e instanceof LivingEntity le) || le.isDead()) continue;
+                if (e instanceof Player p) {
+                    // Spectators, players with the bypass permission and opted-out players are never targeted
+                    if (!attackPlayers || p.getGameMode() == org.bukkit.GameMode.SPECTATOR || p.hasPermission("xmas.bypass.snowmen")
+                            || plugin.getOptOutManager().isOptedOut(p, OptOutManager.Category.SNOWMEN)) continue;
+                } else if (!attackMobs || !(e instanceof Enemy)) {
+                    continue;
+                }
+                double distSq = le.getLocation().distanceSquared(snowman.getLocation());
+                if (distSq < bestDistSq && snowman.hasLineOfSight(le)) {
                     bestDistSq = distSq;
-                    target = p;
+                    target = le;
                 }
             }
             if (target == null) return;
 
-            org.bukkit.util.Vector direction = target.getLocation().toVector()
-                    .subtract(snowman.getLocation().toVector());
+            org.bukkit.util.Vector direction = target.getEyeLocation().toVector()
+                    .subtract(snowman.getEyeLocation().toVector());
             if (direction.lengthSquared() < 0.01) return; // same position: normalising would give NaN
+            double distance = direction.length();
             direction.normalize().multiply(1.1);
+            direction.setY(direction.getY() + 0.02 * distance); // slight arc
 
-            Snowball ball = snowman.launchProjectile(Snowball.class);
-            ball.addScoreboardTag(SNOWBALL_TAG);
-            ball.setVelocity(direction);
+            snowman.launchProjectile(Snowball.class, direction);
+            snowman.getWorld().playSound(snowman.getLocation(), org.bukkit.Sound.ENTITY_SNOW_GOLEM_SHOOT, 0.8f, 1f);
 
         }, () -> {
             // Retired: the golem was removed (killed/melted) - keep the spawn cap accurate

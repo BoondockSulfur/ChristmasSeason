@@ -3,12 +3,11 @@
 # Colour codes use '&'. Keys under 'log.' are console only (colours are stripped).
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cNo permission."
 
 # Commands - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cThis command can only be used in-game."
 
   # Quotes needed because YAML interprets 'on'/'off' as booleans
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&lA biome restore is still running! &7Please wait until it has finished."
     already-active: "&eChristmasSeason is already active. &7Use '/xmas reload' to restart the features."
     activation-running: "&eChristmasSeason is being activated right now (SAFE backup). &7Please wait a moment."
+    fix-running: "&eA fix-diff is running. &7Please wait until it has finished."
     backup-failed: "&c&lWARNING: SAFE backup could not be created! &7Check disk space and permissions of the backup folder."
     snapshot-disabled: "&c&lWARNING: Snapshot system is disabled (enableSnapshot: false)! &cBiomes are changed WITHOUT a backup - no automatic restore possible."
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BIOME> &7[radius_chunks]"
       unknown-biome: "&cUnknown biome."
       invalid-radius: "&cInvalid number for radius."
+      radius-too-large: "&cRadius {0} is too large - at most &f{1} &cchunks are allowed."
       only-active: "&c/xmas biome set only works while ChristmasSeason is active. &7Run '/xmas on' first."
       success: "&aBiome set: &e{0} &7chunk(s) scheduled."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<backup-ID> &7- compares current biomes with a backup"
       running: "&7Comparing biomes with backup... &7This can take a while."
+      already-running: "&eA comparison or fix-diff is already running. &7Please wait until it has finished."
       failed: "&c✗ Comparison failed! See console."
       header: "&6═══ COMPARISON RESULT ═══"
       backup: "&7Backup: &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lWARNING: &7All differing chunks will be overwritten with the backup biomes!"
       confirm: "&eConfirm with: &f/xmas biome fix-diff {0} confirm"
       running: "&7Fixing differences... &7This can take a few minutes."
+      blocked-active: "&c/xmas biome fix-diff only works while the event is off. &7Run '/xmas off' first."
       done: "&a✓ Fix complete! &7Restored: &f{0} &7chunks"
       failed: "&c✗ Fix failed! See console."
 
@@ -137,7 +140,7 @@ command:
     available: "&a&lUpdate available! &7Current: &c{0} &7- Latest: &a{1}"
     links: "&7Download: &f{0} &7| &f{1}"
     up-to-date: "&a✓ You are running the latest version &7({0})."
-    failed: "&c✗ Update check failed. &7No connection to Modrinth or GitHub."
+    failed: "&c✗ Update check failed. &7No connection to Modrinth."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -210,11 +213,37 @@ update:
   download: "&7Download:"
   footer: "&8&l&m                                    "
 
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- switch a mob type off or on for yourself"
+  status-header: "&6&lFestive mobs for you:"
+  status-line: "&7{0}: {1}"
+  state-on: "&aactive"
+  state-off: "&copted out"
+  opted-out: "&7You opted out of &f{0}&7."
+  opted-in: "&7Back on for you: &f{0}&7."
+  category:
+    wichtel: "Wichtel"
+    elves: "Elves"
+    snowmen: "Snowmen"
+    all: "all festive mobs"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aA Wichtel tied your shoelaces together!"
+  elves:
+    return-loot: "&bAn elf brought back one of your items!"
+    heal: "&bAn elf's magic soothes your wounds."
+    treat: "&bAn elf baked something for you!"
+    gift-trail: "&bAn elf shows you the way to a gift!"
+
 # Console logs
 log:
   reload-error: "Reload failed: {0}"
 
   config:
+    mobs-migrated: "Moved the settings of Wichtel, elves and snowmen from config.yml to mobs.yml."
     unknown-target-biome: "config.yml: unknown biome in biome.target: '{0}' - SNOWY_PLAINS will be used."
     unknown-material: "config.yml: unknown material '{0}' in {1} - entry is ignored."
     unknown-enchantment: "config.yml: unknown enchantment '{0}' in {1} - skipped."
@@ -325,7 +354,6 @@ log:
     closing-database: "Closing database for backup restore..."
     restored: "Backup '{0}' restored ({1} KB)"
     error-restoring: "Error restoring backup: {0}"
-    database-reopened: "Database reopened."
     cleared: "{0} backup(s) deleted."
     list-header: "&6=== BACKUPS ==="
     list-entry: "&7  [{0}] &f{1} &7({2} KB)"
@@ -367,7 +395,7 @@ log:
     error-retrieving-stats: "Error retrieving statistics: {0}"
 
   update:
-    check-failed: "Update check failed: no connection to Modrinth or GitHub."
+    check-failed: "Update check failed: no connection to Modrinth."
     available: "ChristmasSeason update available! Current: {0} - Latest: {1}"
     download: "Download: {0} | {1}"
 

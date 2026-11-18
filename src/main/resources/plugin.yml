@@ -10,7 +10,7 @@ softdepend: [WorldEdit, WorldGuard, GriefPrevention, PlaceholderAPI]
 commands:
   xmas:
     description: Controls the Christmas event
-    usage: /xmas <on|off|status|reload|biome|storm|backup|update|debug>
+    usage: /xmas <on|off|status|reload|biome|storm|backup|update|feature|stats|debug>
     permission: xmas.admin
   xmasgift:
     description: Spawns a gift chest at your position
@@ -21,12 +21,20 @@ commands:
     usage: /advent [status|<day>]
     aliases: [adventskalender, xmasadvent]
     permission: xmas.advent
+  xmasoptout:
+    description: Switches Wichtel, elves or snowmen off for yourself
+    usage: /xmasoptout [wichtel|elves|snowmen|all]
+    aliases: [wichteloptout]
+    permission: xmas.optout
 permissions:
   xmas.admin:
     description: Allows managing the Christmas event
     default: op
   xmas.advent:
     description: Allows using the advent calendar
+    default: true
+  xmas.optout:
+    description: Allows opting out of Wichtel, elves and snowmen
     default: true
   xmas.bypass.snowmen:
     description: Snowmen never target this player

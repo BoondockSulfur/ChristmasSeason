@@ -5,28 +5,18 @@ All notable changes to the ChristmasSeason plugin will be documented in this fil
 ## [2.5.0] - 2026-11-17
 
 ### Added
-- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese for all in-game messages (`language: fr`, `es`, `pt_BR`, `pl`, `ru`, `nl`, `it`, `tr`, `zh_CN`); console messages stay English. The selected file is extracted on first use. All nine translations were reviewed and corrected.
+- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese (`language`); console messages stay English.
+- **Wichtel** carry off items from the ground or item frames (back in place when they die or disappear) and play harmless pranks; **elves** bring stolen items back, heal, hand out treats, show the way to gifts and grow crops. Every feature can be switched off, nothing happens in WorldGuard regions or claims.
+- **Opt-out:** `/xmasoptout` lets players switch Wichtel, elves or snowmen off for themselves; snowmen pelt players and hostile mobs again (knockback, no damage) and leave snow trails only under the open sky.
 
 ### Fixed
-- **Backups:** `/xmas backup restore` is refused while the event is active; converted chunks could lose their original biomes.
-- **Schedule:** the last applied state is saved, so a manual `/xmas on`/`off` survives restarts and reloads; a switch refused during a restore is retried.
-- **Biome safety:** changing `biome.changeMinY/MaxY` or `verticalStep` during the event no longer converts cells the snapshot does not cover.
-- **`/xmas biome info`:** yes/no were shown as missing translations.
-- **Restore:** snow and ice that neighbouring unconverted chunks had before the event are kept when their border strips are cleaned.
-- **Gifts:** marked chests in unloaded chunks are removed after `/xmas off` even with `gifts.enabled: false`.
-- **`compare`/`fix-diff`:** backup files are read without changing them.
-- **`compare`:** the top 5 now really are the chunks with the most differences.
-- **Advent calendar:** "already opened" no longer claims "today" (wrong for catch-up days).
+- **Biome safety:** `backup restore` and `fix-diff` are refused while the event is active, Y-range changes no longer convert cells without a snapshot, snow and ice that existed before the event survive the restore, while snow that spilled over chunk borders during the event is removed.
+- **Schedule:** a manual `/xmas on`/`off` survives restarts and reloads.
+- Various smaller fixes to `biome info`, `compare`, `convert-all`, gift cleanup and the advent calendar.
 
 ### Changed
-- `/xmas on`/`off` in the current state no longer restart, announce or fire the API event; `off` only retries leftover snapshots.
-- The SAFE backup of `/xmas on` runs off the main thread.
-- `wichtel`, `elves` and `snowmen` `maxPerWorld` now count per world.
-- `convert-all` accepts a radius up to 1000 and no longer builds a coordinate list.
-- `/xmas backup clear` needs `confirm`.
-- The emergency backup warning on startup only appears when the event is active and the database is missing.
-- Event mobs can be set on fire by players and blocks again (daylight protection stays).
-- Simple loot entries accept namespaced materials (`minecraft:diamond:2`).
+- Mob settings moved to the new `mobs.yml` (existing values are migrated automatically); update notices link to Modrinth and CurseForge.
+- `/xmas biome set` is limited to radius 32 and skips excluded areas; `/xmas backup clear` needs `confirm`; the SAFE backup runs off the main thread.
 
 ## [2.4.2] - 2026-11-04
 

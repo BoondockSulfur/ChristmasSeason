@@ -69,6 +69,10 @@ public class EventController {
             lang.send(feedback, "command.on.restore-running");
             return false;
         }
+        if (plugin.getBiomeCompare().isFixRunning()) {
+            lang.send(feedback, "command.on.fix-running");
+            return false;
+        }
         if (!activating.compareAndSet(false, true)) {
             lang.send(feedback, "command.on.activation-running");
             return false;
@@ -310,15 +314,20 @@ public class EventController {
     // ---------------------------------------------------------- features
 
     /**
-     * Enables or disables a feature at runtime (persisted to config.yml).
+     * Enables or disables a feature at runtime (persisted to config.yml or mobs.yml).
      *
      * @return {@code false} for an unknown feature name
      */
     public boolean setFeatureEnabled(String feature, boolean enabled) {
         String key = FEATURES.get(feature.toLowerCase());
         if (key == null) return false;
-        plugin.getConfig().set(key, enabled);
-        plugin.saveConfig();
+        if (isMobKey(key)) {
+            plugin.getMobConfig().set(key, enabled);
+            plugin.saveMobConfig();
+        } else {
+            plugin.getConfig().set(key, enabled);
+            plugin.saveConfig();
+        }
         if (plugin.isActive()) {
             plugin.stopFeatures();
             plugin.startFeatures();
@@ -328,6 +337,10 @@ public class EventController {
 
     public boolean isFeatureEnabled(String feature) {
         String key = FEATURES.get(feature.toLowerCase());
-        return key != null && plugin.getConfig().getBoolean(key, true);
+        return key != null && (isMobKey(key) ? plugin.getMobConfig() : plugin.getConfig()).getBoolean(key, true);
+    }
+
+    private static boolean isMobKey(String key) {
+        return key.startsWith("wichtel.") || key.startsWith("elves.") || key.startsWith("snowmen.");
     }
 }

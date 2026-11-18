@@ -56,7 +56,10 @@ public class LoadedObjectSync {
     public void syncEntity(Entity entity, boolean active) {
         if (plugin.getWichtelManager().isEventMob(entity)) {
             if (active) plugin.getWichtelManager().adopt(entity);
-            else remove(entity);
+            else {
+                plugin.getWichtelManager().returnLoot(entity);
+                remove(entity);
+            }
         } else if (plugin.getSnowmanManager().isEventSnowman(entity)) {
             if (active) plugin.getSnowmanManager().adopt(entity);
             else remove(entity);

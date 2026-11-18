@@ -353,8 +353,4 @@ public class BiomeSnapshotBackup {
     public boolean hasDatabaseFile() {
         return dbFile.exists();
     }
-
-    public File getBackupDirectory() {
-        return backupDir;
-    }
 }

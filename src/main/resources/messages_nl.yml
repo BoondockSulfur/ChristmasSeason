@@ -3,12 +3,11 @@
 # Kleurcodes met '&'. Consoleberichten (log.*) die hier ontbreken blijven Engels.
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cGeen toestemming."
 
 # Commando's - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cDit commando kan alleen in het spel worden gebruikt."
 
   # Aanhalingstekens nodig, omdat YAML 'on'/'off' als booleans leest
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&lEr loopt nog een bioomherstel! &7Wacht tot het klaar is."
     already-active: "&eChristmasSeason is al actief. &7Gebruik '/xmas reload' om de functies opnieuw te starten."
     activation-running: "&eChristmasSeason wordt nu geactiveerd (SAFE-back-up). &7Even geduld."
+    fix-running: "&eEr loopt een fix-diff. &7Wacht tot deze klaar is."
     backup-failed: "&c&lLET OP: SAFE-back-up kon niet worden gemaakt! &7Controleer schijfruimte en rechten van de back-upmap."
     snapshot-disabled: "&c&lLET OP: het snapshotsysteem is uitgeschakeld (enableSnapshot: false)! &cBiomen worden ZONDER back-up gewijzigd - geen automatisch herstel mogelijk."
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BIOOM> &7[straal_chunks]"
       unknown-biome: "&cOnbekend bioom."
       invalid-radius: "&cOngeldig getal voor de straal."
+      radius-too-large: "&cStraal {0} is te groot - maximaal &f{1} &cchunks zijn toegestaan."
       only-active: "&c/xmas biome set werkt alleen als ChristmasSeason actief is. &7Voer eerst '/xmas on' uit."
       success: "&aBioom ingesteld: &e{0} &7chunk(s) ingepland."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<back-up-ID> &7- vergelijkt de huidige biomen met een back-up"
       running: "&7Biomen worden vergeleken met de back-up... &7Dit kan even duren."
+      already-running: "&eEr loopt al een vergelijking of fix-diff. &7Wacht tot deze klaar is."
       failed: "&c✗ Vergelijking mislukt! Zie console."
       header: "&6═══ VERGELIJKINGSRESULTAAT ═══"
       backup: "&7Back-up: &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lLET OP: &7alle chunks met afwijkingen worden overschreven met de biomen uit de back-up!"
       confirm: "&eBevestig met: &f/xmas biome fix-diff {0} confirm"
       running: "&7Verschillen worden hersteld... &7Dit kan een paar minuten duren."
+      blocked-active: "&c/xmas biome fix-diff werkt alleen als het evenement uit staat. &7Voer eerst '/xmas off' uit."
       done: "&a✓ Herstel voltooid! &7Hersteld: &f{0} &7chunks"
       failed: "&c✗ Herstel mislukt! Zie console."
 
@@ -137,7 +140,7 @@ command:
     available: "&a&lUpdate beschikbaar! &7Huidig: &c{0} &7- Nieuwste: &a{1}"
     links: "&7Downloaden: &f{0} &7| &f{1}"
     up-to-date: "&a✓ Je gebruikt de nieuwste versie &7({0})."
-    failed: "&c✗ Zoeken naar updates mislukt. &7Geen verbinding met Modrinth of GitHub."
+    failed: "&c✗ Zoeken naar updates mislukt. &7Geen verbinding met Modrinth."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -209,6 +212,31 @@ update:
   latest: "&7Nieuwste versie: &a{0}"
   download: "&7Downloaden:"
   footer: "&8&l&m                                    "
+
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- zet een type wezen voor jezelf aan of uit"
+  status-header: "&6&lFeestelijke wezens voor jou:"
+  status-line: "&7{0}: {1}"
+  state-on: "&aactief"
+  state-off: "&cuitgeschakeld"
+  opted-out: "&7Je hebt &f{0} &7uitgeschakeld."
+  opted-in: "&7Weer actief voor jou: &f{0}&7."
+  category:
+    wichtel: "Kabouters"
+    elves: "Elfen"
+    snowmen: "Sneeuwpoppen"
+    all: "alle feestelijke wezens"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aEen kabouter heeft je veters aan elkaar geknoopt!"
+  elves:
+    return-loot: "&bEen elf heeft een van je voorwerpen teruggebracht!"
+    heal: "&bDe magie van een elf verzacht je wonden."
+    treat: "&bEen elf heeft iets voor je gebakken!"
+    gift-trail: "&bEen elf wijst je de weg naar een cadeau!"
 
 # Consoleberichten die spelers ook zien (de rest blijft Engels)
 log:

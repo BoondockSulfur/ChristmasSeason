@@ -67,11 +67,6 @@ public class FoliaSchedulerHelper {
         return foliaLib.getScheduler().runAtLocationLater(location, task, delayTicks);
     }
 
-    /** Repeating variant of {@link #runAtLocation(Location, Runnable)}. */
-    public WrappedTask runAtLocationTimer(Location location, Runnable task, long delayTicks, long periodTicks) {
-        return foliaLib.getScheduler().runAtLocationTimer(location, task, delayTicks, periodTicks);
-    }
-
     /** Runs a task on the entity's scheduler (no-op if the entity is already invalid). */
     public void runForEntity(Entity entity, Runnable task) {
         if (entity.isValid()) {
@@ -106,18 +101,6 @@ public class FoliaSchedulerHelper {
         }
         // Entity is already gone: run the bookkeeping right away
         if (retired != null) retired.run();
-        return null;
-    }
-
-    /**
-     * Runs a repeating task on the entity's scheduler.
-     *
-     * @return task handle, or {@code null} if the entity is invalid
-     */
-    public WrappedTask runForEntityTimer(Entity entity, Runnable task, long delayTicks, long periodTicks) {
-        if (entity.isValid()) {
-            return foliaLib.getScheduler().runAtEntityTimer(entity, task, null, delayTicks, periodTicks);
-        }
         return null;
     }
 

@@ -185,6 +185,10 @@ public class XmasCommand implements CommandExecutor {
             try { r = Math.max(0, Integer.parseInt(args[3])); }
             catch (NumberFormatException ex) { lang.send(sender, "command.biome.set.invalid-radius"); return; }
         }
+        if (r > BiomeSnowManager.MAX_SET_RADIUS) {
+            lang.send(sender, "command.biome.set.radius-too-large", r, BiomeSnowManager.MAX_SET_RADIUS);
+            return;
+        }
 
         if (rejectConversion(sender)) return;
         int scheduled = plugin.getBiomeSnowManager().setBiomeAroundPlayer(player, target, r);
@@ -223,11 +227,16 @@ public class XmasCommand implements CommandExecutor {
             return;
         }
 
+        if (rejectWhileRestoring(sender)) return;
+        if (!plugin.getBiomeCompare().tryBegin(false)) {
+            lang.send(sender, "command.biome.compare.already-running");
+            return;
+        }
         lang.send(sender, "command.biome.compare.running");
         final String backupId = args[2];
 
         // Database access on an async thread; chunk work is scheduled per region inside BiomeCompare
-        scheduler.runAsync(() -> {
+        runCompareTask(() -> {
             BiomeCompare.CompareResult result = plugin.getBiomeCompare().compareWithBackup(backupFile);
             scheduler.runGlobalTask(() -> {
                 if (result == null) {
@@ -272,8 +281,18 @@ public class XmasCommand implements CommandExecutor {
             return;
         }
 
+        if (rejectWhileRestoring(sender)) return;
+        // While the event runs, the bubble would convert the fixed chunks again
+        if (plugin.isActive()) {
+            lang.send(sender, "command.biome.fix-diff.blocked-active");
+            return;
+        }
+        if (!plugin.getBiomeCompare().tryBegin(true)) {
+            lang.send(sender, "command.biome.compare.already-running");
+            return;
+        }
         lang.send(sender, "command.biome.fix-diff.running");
-        scheduler.runAsync(() -> {
+        runCompareTask(() -> {
             int fixed = plugin.getBiomeCompare().fixDifferences(backupFile, null);
             scheduler.runGlobalTask(() -> {
                 if (fixed >= 0) {
@@ -283,6 +302,22 @@ public class XmasCommand implements CommandExecutor {
                 }
             });
         });
+    }
+
+    /** Runs a compare/fix-diff job off the main thread and always releases the comparison slot. */
+    private void runCompareTask(Runnable job) {
+        try {
+            scheduler.runAsync(() -> {
+                try {
+                    job.run();
+                } finally {
+                    plugin.getBiomeCompare().end();
+                }
+            });
+        } catch (RuntimeException e) {
+            plugin.getBiomeCompare().end();
+            throw e;
+        }
     }
 
     /** Explains why a spot is (or is not) snowy: current and original biome, snapshot, exclusion. */
@@ -488,7 +523,7 @@ public class XmasCommand implements CommandExecutor {
                     checker.sendUpdateNotification(player);
                 } else {
                     lang.send(sender, "command.update.available", result.getCurrentVersion(), result.getLatestVersion());
-                    lang.send(sender, "command.update.links", checker.getModrinthUrl(), checker.getGitHubUrl());
+                    lang.send(sender, "command.update.links", checker.getModrinthUrl(), checker.getCurseForgeUrl());
                 }
             } else if (result.getLatestVersion() != null) {
                 lang.send(sender, "command.update.up-to-date", result.getCurrentVersion());

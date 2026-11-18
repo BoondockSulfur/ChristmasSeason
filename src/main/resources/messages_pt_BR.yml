@@ -3,12 +3,11 @@
 # Códigos de cor com '&'. Mensagens de console (log.*) que não estão aqui ficam em inglês.
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cVocê não tem permissão."
 
 # Comandos - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cEste comando só pode ser usado dentro do jogo."
 
   # Aspas necessárias: o YAML interpreta 'on'/'off' como booleanos
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&lAinda há uma restauração de biomas em andamento! &7Aguarde até terminar."
     already-active: "&eO ChristmasSeason já está ativo. &7Use '/xmas reload' para reiniciar as funções."
     activation-running: "&eO ChristmasSeason está sendo ativado agora (backup SAFE). &7Aguarde um momento."
+    fix-running: "&eUm fix-diff está em andamento. &7Aguarde até que termine."
     backup-failed: "&c&lATENÇÃO: não foi possível criar o backup SAFE! &7Verifique o espaço em disco e as permissões da pasta de backups."
     snapshot-disabled: "&c&lATENÇÃO: o sistema de snapshots está desativado (enableSnapshot: false)! &cOs biomas são alterados SEM backup - não há restauração automática."
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BIOMA> &7[raio_chunks]"
       unknown-biome: "&cBioma desconhecido."
       invalid-radius: "&cNúmero inválido para o raio."
+      radius-too-large: "&cO raio {0} é grande demais - são permitidos no máximo &f{1} &cchunks."
       only-active: "&c/xmas biome set só funciona com o ChristmasSeason ativo. &7Execute '/xmas on' primeiro."
       success: "&aBioma definido: &e{0} &7chunk(s) agendado(s)."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<ID-backup> &7- compara os biomas atuais com um backup"
       running: "&7Comparando biomas com o backup... &7Isso pode demorar um pouco."
+      already-running: "&eUma comparação ou um fix-diff já está em andamento. &7Aguarde até que termine."
       failed: "&c✗ A comparação falhou! Veja o console."
       header: "&6═══ RESULTADO DA COMPARAÇÃO ═══"
       backup: "&7Backup: &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lATENÇÃO: &7todos os chunks diferentes serão sobrescritos com os biomas do backup!"
       confirm: "&eConfirme com: &f/xmas biome fix-diff {0} confirm"
       running: "&7Corrigindo diferenças... &7Isso pode levar alguns minutos."
+      blocked-active: "&c/xmas biome fix-diff só funciona com o evento desativado. &7Execute '/xmas off' primeiro."
       done: "&a✓ Correção concluída! &7Restaurados: &f{0} &7chunks"
       failed: "&c✗ A correção falhou! Veja o console."
 
@@ -137,7 +140,7 @@ command:
     available: "&a&lAtualização disponível! &7Atual: &c{0} &7- Mais recente: &a{1}"
     links: "&7Download: &f{0} &7| &f{1}"
     up-to-date: "&a✓ Você está usando a versão mais recente &7({0})."
-    failed: "&c✗ A busca por atualizações falhou. &7Sem conexão com o Modrinth ou o GitHub."
+    failed: "&c✗ A busca por atualizações falhou. &7Sem conexão com o Modrinth."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -161,7 +164,7 @@ command:
   stats:
     header: "&6═══ Estatísticas de presentes &7(total aberto: &f{0}&7) ═══"
     entry: "&7  {0}. &f{1} &7- &e{2}"
-    player: "&7{0}: &e{1} &7presentes abertos, &e{2} &7portas do calendário do Advento"
+    player: "&7{0}: &e{1} &7presentes abertos, &e{2} &7portas do calendário do Advento abertas"
     unknown-player: "&cJogador desconhecido: &f{0}"
 
 # Comandos - /xmasgift
@@ -209,6 +212,31 @@ update:
   latest: "&7Versão mais recente: &a{0}"
   download: "&7Download:"
   footer: "&8&l&m                                    "
+
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- ativa ou desativa um tipo de criatura para você"
+  status-header: "&6&lCriaturas festivas para você:"
+  status-line: "&7{0}: {1}"
+  state-on: "&aativo"
+  state-off: "&cdesativado"
+  opted-out: "&7Você desativou &f{0}&7."
+  opted-in: "&7Ativos novamente para você: &f{0}&7."
+  category:
+    wichtel: "Duendes"
+    elves: "Elfos"
+    snowmen: "Bonecos de neve"
+    all: "todas as criaturas festivas"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aUm duende amarrou seus cadarços um no outro!"
+  elves:
+    return-loot: "&bUm elfo devolveu um dos seus itens!"
+    heal: "&bA magia de um elfo alivia suas feridas."
+    treat: "&bUm elfo assou algo para você!"
+    gift-trail: "&bUm elfo mostra o caminho até um presente!"
 
 # Mensagens de console que os jogadores também veem (o resto fica em inglês)
 log:

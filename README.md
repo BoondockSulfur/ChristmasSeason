@@ -23,9 +23,10 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 ### 🎁 Interactive Elements
 - **Gifts:** Randomly spawning chests with loot (common/extra/rare)
 - **Decorations:** Glowing items spawn around players
-- **Wichtel:** Mischievous baby zombies that collect decoration items and hop around
-- **Elves:** Friendly allays that do the same
-- **Snowmen:** Aggressive snow golems that throw snowballs
+- **Wichtel:** Mischievous baby zombies that carry off loose items and items from item frames (back in their frame or spot when the Wichtel dies or disappears) and play harmless pranks: running away with their loot, snowballs, tied shoelaces, opening doors and blowing out candles, hiding
+- **Elves:** Friendly allays that chase thieving Wichtel and fly the loot back to its item frame, owner or spot, heal hurt players, hand out treats, show the way to gifts and let crops grow
+- **Opt-out:** players switch Wichtel, elves or snowmen off for themselves with `/xmasoptout`; every mob feature can be switched off in `mobs.yml`
+- **Snowmen:** Snow golems that pelt players and hostile mobs with harmless snowballs (knockback only)
 
 ### 📅 Season & Calendar
 - **Schedule:** activates and deactivates the event automatically by date (`schedule.*`, year-spanning windows like 12-01 → 01-06)
@@ -42,7 +43,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **Region Protection:** No spawns in WorldGuard regions or GriefPrevention claims (soft dependency)
 - **Backup System:** Automatic SAFE/timestamp/emergency backups of the biome database (WAL-safe, rotated)
 - **Startup Safety Checks:** DB integrity check, crash detection via emergency backups
-- **Update Checker:** `/xmas update check` + clickable admin notifications (Modrinth/GitHub), can be disabled
+- **Update Checker:** `/xmas update check` + clickable admin notifications (Modrinth/CurseForge), can be disabled
 - **Restart-safe tracking:** gift chests, decorations and event mobs are recognised again after a restart or `/xmas reload` (caps, lifetimes and `/xmas off` cleanup keep working)
 - **Custom biome support:** snapshots store fully namespaced biome keys, so Terralith/data-pack biomes restore correctly
 
@@ -60,8 +61,8 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 | Platform | Status | Scheduler Type | Performance |
 |----------|--------|----------------|-------------|
-| **Paper** | ✅ Tested (1.21.11, 26.2) | Global Timer | 18-20 TPS |
-| **Folia** | ✅ Tested (1.21.11) | Player-based Entity Scheduler | Optimal for 50+ players |
+| **Paper** | ✅ Tested (1.21.10, 1.21.11, 26.3) | Global Timer | 18-20 TPS |
+| **Folia** | ✅ Tested (1.21.11, 26.1.2) | Player-based Entity Scheduler | Optimal for 50+ players |
 | **Purpur** | ✅ Compatible | Global Timer | 18-20 TPS |
 
 **Automatic Detection:** The plugin detects the platform on startup and chooses the optimal strategy!
@@ -93,19 +94,23 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 | `/xmas off` | Deactivates and restores biomes | `xmas.admin` |
 | `/xmas status` | Shows status (active/inactive) | `xmas.admin` |
 | `/xmas reload` | Reloads configuration | `xmas.admin` |
-| `/xmas biome set <biome> [radius]` | Manually sets biomes (only when active) | `xmas.admin` |
+| `/xmas biome set <biome> [radius]` | Manually sets biomes (only when active, radius up to 32, excluded areas are skipped) | `xmas.admin` |
 | `/xmas biome clearsnap` | Deletes biome snapshot database (guarded) | `xmas.admin` |
 | `/xmas biome info` | Why is this spot snowy? Current vs. original biome, snapshot, exclusion | `xmas.admin` |
 | `/xmas biome compare <backup>` | Compares current biomes with a backup | `xmas.admin` |
-| `/xmas biome fix-diff <backup> confirm` | Restores differing chunks from a backup | `xmas.admin` |
+| `/xmas biome fix-diff <backup> confirm` | Restores differing chunks from a backup (only while the event is off) | `xmas.admin` |
 | `/xmas backup <list\|restore\|create\|clear>` | Manages biome database backups (`restore` only while the event is off, `restore`/`clear` need `confirm`) | `xmas.admin` |
-| `/xmas update check` | Checks Modrinth/GitHub for updates | `xmas.admin` |
+| `/xmas update check` | Checks Modrinth for updates | `xmas.admin` |
 | `/xmas biome convert-all [radius] [world] confirm` | Converts every generated chunk around spawn (budgeted, radius up to 1000) | `xmas.admin` |
 | `/xmas feature <name> <on\|off>` | Toggles biome/snowstorm/decoration/gifts/wichtel/elves/snowmen/advent at runtime | `xmas.admin` |
 | `/xmas stats [player]` | Gift statistics (top 10 + player) | `xmas.admin` |
+| `/xmas storm <on\|off\|toggle\|status\|pulse [seconds]>` | Controls the snowstorm (`off` pauses the auto phases) | `xmas.admin` |
+| `/xmas debug [verbose]` | Toggles debug output in the console | `xmas.admin` |
+| `/xmasgift` | Spawns a gift chest at your position | `xmas.admin` |
 | `/advent [status\|<day>]` | Opens today's advent door / shows the calendar | `xmas.advent` (default: everyone) |
+| `/xmasoptout [wichtel\|elves\|snowmen\|all]` | Shows or toggles your own opt-out of the festive mobs | `xmas.optout` (default: everyone) |
 
-**Permissions:** `xmas.admin` (all admin commands), `xmas.advent` (calendar, default true), `xmas.bypass.snowmen` (never targeted by snowmen).
+**Permissions:** `xmas.admin` (all admin commands), `xmas.advent` (calendar, default true), `xmas.optout` (opt-out, default true), `xmas.bypass.snowmen` (never targeted by snowmen).
 
 **PlaceholderAPI** (optional): `%xmas_active%`, `%xmas_snowstorm%`, `%xmas_days_until_start%`, `%xmas_days_left%`, `%xmas_gifts_opened%`, `%xmas_gifts_opened_total%`, `%xmas_advent_claimed%`, `%xmas_advent_today%`, `%xmas_tracked_mobs%`, `%xmas_tracked_gifts%`.
 
@@ -196,25 +201,6 @@ gifts:
         name: "&bIcicle"
         enchantments: {sharpness: 2}
 
-wichtel:
-  enabled: true
-  spawnIntervalSeconds: 45
-  maxPerWorld: 6            # counted per world
-  maxNearPlayer: 0          # per-player cap within spawning.nearRadius (0 = off)
-  stealOnlyDecorations: true  # false = also collect other dropped items (never player drops)
-
-elves:
-  enabled: true
-  spawnIntervalSeconds: 60
-  maxPerWorld: 4
-
-snowmen:
-  enabled: true
-  spawnIntervalSeconds: 45
-  maxPerWorld: 6
-  lifetimeSeconds: 600      # 0 = stay until /xmas off
-  attackChance: 0.15
-
 advent:
   enabled: true
   month: 12
@@ -233,6 +219,49 @@ advent:
 updateChecker:
   enabled: true
   notifyOps: true
+```
+
+Wichtel, elves and snowmen live in **`mobs.yml`** - every feature has its own switch:
+
+```yaml
+wichtel:
+  enabled: true
+  steal:                    # one loose item or item-frame item, returned to its frame/spot on death/despawn
+    items: true             # never in WorldGuard regions/claims, near a recent death, shulker boxes or bundles
+    itemFrames: true
+    chance: 0.25
+    blacklist: []
+  pranks:
+    enabled: true           # master switch for the pranks below
+    chance: 0.1
+    playerCooldownSeconds: 90
+    runAway: true
+    snowball: true
+    tieShoes: true
+    doorsAndCandles: true
+    hide: true
+
+elves:
+  enabled: true
+  helpers:
+    enabled: true           # master switch for the help below
+    chance: 0.15
+    playerCooldownSeconds: 120
+    returnLoot: true
+    chaseWichtel: true
+    heal: true
+    giftTrail: true
+    treats: true
+    treatDistance: 3        # treats only for players this close, handed over by the elf
+    growCrops: true
+
+snowmen:
+  enabled: true
+  lifetimeSeconds: 600      # 0 = stay until /xmas off
+  attackIntervalSeconds: 3
+  attackChance: 0.5
+  attackPlayers: true       # no damage, knockback only
+  attackMobs: true
 ```
 
 > **Restore and player-placed blocks:** on `/xmas off` snow layers and plain ice on the surface of
@@ -292,18 +321,6 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 
 ## 🐛 Troubleshooting
 
-### Problem: `NoSuchMethodError: teleportAsync` (Spigot)
-**Cause:** Old plugin version before v2.0.0
-**Solution:** Update to ChristmasSeason v2.1.0+ (Multi-Platform Support)
-
-### Problem: `UnsupportedOperationException: Must use teleportAsync` (Folia)
-**Cause:** Old plugin version before v2.0.0
-**Solution:** Update to ChristmasSeason v2.1.0+ (Multi-Platform Support)
-
-### Problem: `IllegalStateException` crashes during `/xmas off` on Folia
-**Cause:** Thread safety violations in old versions
-**Solution:** Update to ChristmasSeason v2.1.0+ (Critical Folia fixes included)
-
 ### Problem: TPS drops on Paper
 **Solution:** Reduce `perTickBudget` to 6 or increase `tickIntervalTicks` to 60
 
@@ -338,6 +355,12 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 ---
 
 ## 🔄 Migration Guide
+
+### From v2.4.x to v2.5.0
+
+1. **Stop the server**
+2. **Replace the JAR** with `ChristmasSeason-2.5.0.jar`
+3. **Start the server** - the `spawning`, `wichtel`, `elves` and `snowmen` sections move from `config.yml` to the new `mobs.yml` automatically, existing values are kept
 
 ### From v2.3.0 to v2.4.0
 

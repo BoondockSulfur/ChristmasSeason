@@ -2,11 +2,9 @@ package de.boondocksulfur.christmas.integration;
 
 import de.boondocksulfur.christmas.ChristmasSeason;
 import org.bukkit.Location;
-import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -40,7 +38,6 @@ public class RegionIntegration {
     private Method gpGetClaimsInChunk;
     private Method gpLesserCorner;
     private Method gpIsAdminClaim;
-    private Method gpAllowBuild;
 
     /** Failed check types already reported, so a broken integration cannot flood the console. */
     private final Set<String> reportedFailures = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -102,7 +99,6 @@ public class RegionIntegration {
                 gpGetClaimsInChunk = dataStoreClass.getMethod("getClaims", int.class, int.class);
                 gpLesserCorner = claimClass.getMethod("getLesserBoundaryCorner");
                 gpIsAdminClaim = claimClass.getMethod("isAdminClaim");
-                gpAllowBuild = claimClass.getMethod("allowBuild", Player.class, org.bukkit.Material.class);
 
                 Object gpInstance = gpClass.getField("instance").get(null);
                 gpDataStore = gpClass.getField("dataStore").get(gpInstance);
@@ -149,27 +145,6 @@ public class RegionIntegration {
         return true;
     }
 
-    /**
-     * Check if a player can interact at a specific location (for gift pickup etc.)
-     */
-    public boolean canInteract(Player player, Location location) {
-        if (!plugin.getConfig().getBoolean("regionIntegration.enabled", true)) {
-            return true;
-        }
-
-        // Check WorldGuard
-        if (worldGuardEnabled && !checkWorldGuardPlayer(player, location)) {
-            return false;
-        }
-
-        // Check GriefPrevention
-        if (griefPreventionEnabled && !checkGriefPreventionPlayer(player, location)) {
-            return false;
-        }
-
-        return true;
-    }
-
     // ==================== WorldGuard ====================
 
     /** @return the region set at the location, or {@code null} if the world has no region manager */
@@ -199,24 +174,6 @@ public class RegionIntegration {
         } catch (ReflectiveOperationException | RuntimeException e) {
             reportFailure("WorldGuard spawn check", e);
             return true; // Default to allow on error
-        }
-    }
-
-    /**
-     * WorldGuard player interaction check
-     */
-    private boolean checkWorldGuardPlayer(Player player, Location location) {
-        try {
-            if (player.hasPermission("worldguard.region.bypass.*") || player.isOp()) {
-                return true;
-            }
-
-            Object regions = applicableRegions(location);
-            return regions == null || (int) wgRegionSetSize.invoke(regions) == 0;
-
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            reportFailure("WorldGuard player check", e);
-            return true;
         }
     }
 
@@ -251,28 +208,35 @@ public class RegionIntegration {
     }
 
     /**
-     * GriefPrevention player interaction check
+     * Wichtel mischief (stealing, pranks) and elf crop growing never happen inside any
+     * WorldGuard region or GriefPrevention claim, regardless of the spawn settings. On a
+     * failed check the location counts as protected.
      */
-    private boolean checkGriefPreventionPlayer(Player player, Location location) {
-        try {
-            Object claim = claimAt(location);
-            if (claim == null) {
-                return true; // No claim → allow
+    public boolean isMischiefProtected(Location location) {
+        if (worldGuardEnabled) {
+            try {
+                Object regions = applicableRegions(location);
+                if (regions != null && (int) wgRegionSetSize.invoke(regions) > 0) return true;
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                reportFailure("WorldGuard mischief check", e);
+                return true;
             }
-
-            // allowBuild returns null if allowed, error message if denied
-            return gpAllowBuild.invoke(claim, player, org.bukkit.Material.GRASS_BLOCK) == null;
-
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            reportFailure("GriefPrevention player check", e);
-            return true;
         }
+        if (griefPreventionEnabled) {
+            try {
+                if (claimAt(location) != null) return true;
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                reportFailure("GriefPrevention mischief check", e);
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Warns once per check type; the check itself falls back to its default. */
     private void reportFailure(String check, Exception e) {
         if (reportedFailures.add(check)) {
-            plugin.getLogger().warning(check + " failed, protection is not applied: " + e);
+            plugin.getLogger().warning(check + " failed: " + e);
         }
     }
 

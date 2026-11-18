@@ -2,7 +2,11 @@ package de.boondocksulfur.christmas.listener;
 
 import org.bukkit.entity.Entity;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
 import de.boondocksulfur.christmas.ChristmasSeason;
@@ -45,6 +49,20 @@ public class TrackedObjectListener implements Listener {
             plugin.getGiftManager().adoptInChunk(e.getChunk());
         } else {
             plugin.getGiftManager().removeInChunk(e.getChunk());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerDeath(PlayerDeathEvent e) {
+        if (!e.getDrops().isEmpty()) plugin.getWichtelManager().recordDeath(e.getEntity().getLocation());
+    }
+
+    /** Stolen items keep their owner and item frame when a Wichtel or elf dies. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEventMobDeath(EntityDeathEvent e) {
+        LivingEntity entity = e.getEntity();
+        if (plugin.getWichtelManager().isEventMob(entity)) {
+            plugin.getWichtelManager().handleDeath(entity, e.getDrops());
         }
     }
 }

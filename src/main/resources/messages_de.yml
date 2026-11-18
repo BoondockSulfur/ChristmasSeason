@@ -3,12 +3,11 @@
 # Farbcodes mit '&'. Schlüssel unter 'log.' sind nur für die Konsole (Farben werden entfernt).
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cKeine Berechtigung."
 
 # Befehle - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cDieser Befehl geht nur im Spiel."
 
   # Anführungszeichen nötig, weil YAML 'on'/'off' als Boolean liest
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&lEin Biome-Restore läuft noch! &7Bitte warten, bis er abgeschlossen ist."
     already-active: "&eChristmasSeason ist bereits aktiv. &7Mit '/xmas reload' werden die Features neu gestartet."
     activation-running: "&eChristmasSeason wird gerade aktiviert (SAFE-Backup). &7Bitte einen Moment warten."
+    fix-running: "&eEin fix-diff läuft gerade. &7Bitte warten, bis er fertig ist."
     backup-failed: "&c&lWARNUNG: SAFE-Backup konnte nicht erstellt werden! &7Speicherplatz und Rechte im Backup-Ordner prüfen."
     snapshot-disabled: "&c&lWARNUNG: Snapshot-System ist deaktiviert (enableSnapshot: false)! &cBiome werden OHNE Backup geändert - kein automatisches Restore möglich."
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BIOM> &7[radius_chunks]"
       unknown-biome: "&cUnbekanntes Biom."
       invalid-radius: "&cUngültige Zahl für den Radius."
+      radius-too-large: "&cRadius {0} ist zu groß - erlaubt sind höchstens &f{1} &cChunks."
       only-active: "&c/xmas biome set funktioniert nur, wenn ChristmasSeason aktiv ist. &7Zuerst '/xmas on' ausführen."
       success: "&aBiom gesetzt: &e{0} &7Chunk(s) eingeplant."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<Backup-ID> &7- vergleicht aktuelle Biome mit einem Backup"
       running: "&7Vergleiche Biome mit Backup... &7Das kann etwas dauern."
+      already-running: "&eEin Vergleich oder fix-diff läuft bereits. &7Bitte warten, bis er fertig ist."
       failed: "&c✗ Vergleich fehlgeschlagen! Siehe Konsole."
       header: "&6═══ VERGLEICHSERGEBNIS ═══"
       backup: "&7Backup: &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lWARNUNG: &7Alle abweichenden Chunks werden mit den Backup-Biomen überschrieben!"
       confirm: "&eBestätigen mit: &f/xmas biome fix-diff {0} confirm"
       running: "&7Korrigiere Unterschiede... &7Das kann einige Minuten dauern."
+      blocked-active: "&c/xmas biome fix-diff geht nur bei ausgeschaltetem Event. &7Zuerst '/xmas off' ausführen."
       done: "&a✓ Korrektur abgeschlossen! &7Wiederhergestellt: &f{0} &7Chunks"
       failed: "&c✗ Korrektur fehlgeschlagen! Siehe Konsole."
 
@@ -137,7 +140,7 @@ command:
     available: "&a&lUpdate verfügbar! &7Aktuell: &c{0} &7- Neueste: &a{1}"
     links: "&7Download: &f{0} &7| &f{1}"
     up-to-date: "&a✓ Du verwendest die neueste Version &7({0})."
-    failed: "&c✗ Update-Prüfung fehlgeschlagen. &7Keine Verbindung zu Modrinth oder GitHub."
+    failed: "&c✗ Update-Prüfung fehlgeschlagen. &7Keine Verbindung zu Modrinth."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -210,11 +213,37 @@ update:
   download: "&7Download:"
   footer: "&8&l&m                                    "
 
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- einen Mob-Typ für dich ab- oder anschalten"
+  status-header: "&6&lFestliche Mobs für dich:"
+  status-line: "&7{0}: {1}"
+  state-on: "&aaktiv"
+  state-off: "&cabgeschaltet"
+  opted-out: "&7Du hast &f{0} &7für dich abgeschaltet."
+  opted-in: "&7Wieder aktiv für dich: &f{0}&7."
+  category:
+    wichtel: "Wichtel"
+    elves: "Elfen"
+    snowmen: "Schneemänner"
+    all: "alle festlichen Mobs"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aEin Wichtel hat deine Schnürsenkel zusammengebunden!"
+  elves:
+    return-loot: "&bEin Elf hat dir eines deiner Items zurückgebracht!"
+    heal: "&bDer Zauber eines Elfen lindert deine Wunden."
+    treat: "&bEin Elf hat etwas für dich gebacken!"
+    gift-trail: "&bEin Elf zeigt dir den Weg zu einem Geschenk!"
+
 # Konsolen-Logs
 log:
   reload-error: "Reload fehlgeschlagen: {0}"
 
   config:
+    mobs-migrated: "Einstellungen für Wichtel, Elfen und Schneemänner von config.yml nach mobs.yml verschoben."
     unknown-target-biome: "config.yml: Unbekanntes Biom in biome.target: '{0}' - es wird SNOWY_PLAINS verwendet."
     unknown-material: "config.yml: Unbekanntes Material '{0}' in {1} - Eintrag wird ignoriert."
     unknown-enchantment: "config.yml: Unbekannte Verzauberung '{0}' in {1} - übersprungen."
@@ -325,7 +354,6 @@ log:
     closing-database: "Schließe Datenbank für die Backup-Wiederherstellung..."
     restored: "Backup '{0}' wiederhergestellt ({1} KB)"
     error-restoring: "Fehler beim Wiederherstellen des Backups: {0}"
-    database-reopened: "Datenbank neu geöffnet."
     cleared: "{0} Backup(s) gelöscht."
     list-header: "&6=== BACKUPS ==="
     list-entry: "&7  [{0}] &f{1} &7({2} KB)"
@@ -367,7 +395,7 @@ log:
     error-retrieving-stats: "Fehler beim Abrufen der Statistik: {0}"
 
   update:
-    check-failed: "Update-Prüfung fehlgeschlagen: keine Verbindung zu Modrinth oder GitHub."
+    check-failed: "Update-Prüfung fehlgeschlagen: keine Verbindung zu Modrinth."
     available: "ChristmasSeason-Update verfügbar! Aktuell: {0} - Neueste: {1}"
     download: "Download: {0} | {1}"
 

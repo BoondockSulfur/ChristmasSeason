@@ -1,5 +1,4 @@
 # ChristmasSeason configuration
-# Language: en = English, de = German (messages_<lang>.yml in the plugin folder)
 active: false
 # Primary snow world (kept for compatibility) ...
 snowWorld: "world"
@@ -33,6 +32,7 @@ biome:
   # Applies to newly converted chunks; existing snapshots keep the range they were taken with.
   changeMinY: 50
   changeMaxY: 200
+  verticalStep: 4           # Y distance between stored layers; 4 = every biome cell (recommended)
 
   # SQLite snapshot of the original biomes (plugins/ChristmasSeason/biome-snapshot.db).
   # false = no automatic restore on /xmas off!
@@ -150,38 +150,7 @@ gifts:
       - NETHERITE_SCRAP:1
       - NAME_TAG:1
 
-# Per-player spawn caps (0 = disabled): counts matching mobs within spawning.nearRadius blocks
-spawning:
-  nearRadius: 48
-
-wichtel:
-  enabled: true
-  spawnIntervalSeconds: 45
-  maxPerWorld: 6
-  maxNearPlayer: 0
-  stealRadius: 3.2
-  # true  = Wichtel and elves only collect the plugin's own decoration items
-  # false = they also collect other dropped items (never items dropped by players or death drops)
-  stealOnlyDecorations: true
-  lifetimeSeconds: 240
-  world: "world"
-
-elves:
-  enabled: true
-  spawnIntervalSeconds: 60
-  maxPerWorld: 4
-  maxNearPlayer: 0
-  # lifetimeSeconds and world default to the wichtel values
-
-snowmen:
-  enabled: true
-  spawnIntervalSeconds: 45
-  maxPerWorld: 6
-  maxNearPlayer: 0
-  lifetimeSeconds: 600      # 0 = snowmen stay until /xmas off
-  attackIntervalSeconds: 8
-  attackChance: 0.15
-  range: 12.0
+# Wichtel, elves and snowmen are configured in mobs.yml
 
 # Region protection (WorldGuard & GriefPrevention, soft dependencies)
 regionIntegration:
@@ -231,7 +200,7 @@ advent:
       randomPool: []
       commands: []
 
-# Update checker (Modrinth, GitHub fallback) - one request on startup, then on demand
+# Update checker (Modrinth) - one request on startup, then on demand
 updateChecker:
   enabled: true
   notifyOps: true             # tell operators about updates when they join

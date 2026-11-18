@@ -669,6 +669,9 @@ public class BiomeSnowManager {
         int[] removed = new int[2];
         // Columns where players placed snow/ice during the event
         byte[] placed = placedMask(db, world, chunk.getX(), chunk.getZ());
+        // Border masks are taken when the first neighbour converts, i.e. earlier than the
+        // chunk's own snapshot: a column only counts as snowy/icy before the event if both agree
+        byte[][] earlier = borderMasks(db, world, chunk.getX(), chunk.getZ());
         BiomeSnapshotDatabase.BiomeSnapshot3D placedView = placed == null ? null
                 : new BiomeSnapshotDatabase.BiomeSnapshot3D(snapshot.biomes, snapshot.yStart, snapshot.yStep, placed, placed);
 
@@ -681,8 +684,12 @@ public class BiomeSnowManager {
                 if (originalBiome == null) continue;
                 // Columns that had snow/ice before the event, or got some from a player, keep it
                 if (placedView != null && placedView.hadSnow(x, z)) continue;
-                cleanColumnTop(top, removeSnow && !isNaturallySnowyBiome(originalBiome) && !snapshot.hadSnow(x, z),
-                        removeIce && !isNaturallyIcyBiome(originalBiome) && !snapshot.hadIce(x, z), removed);
+                boolean hadSnow = snapshot.hadSnow(x, z)
+                        && (earlier == null || BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(earlier[0], x, z));
+                boolean hadIce = snapshot.hadIce(x, z)
+                        && (earlier == null || BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(earlier[1], x, z));
+                cleanColumnTop(top, removeSnow && !isNaturallySnowyBiome(originalBiome) && !hadSnow,
+                        removeIce && !isNaturallyIcyBiome(originalBiome) && !hadIce, removed);
             }
         }
 
@@ -803,6 +810,8 @@ public class BiomeSnowManager {
                 try {
                     if (!database.hasChunk(nk.world, nx, nz)) {
                         byte[][] masks = surfaceMasks(w, nx, nz);
+                        // The chunk converted right now has not spilled anything yet
+                        clearSpillStrips(database, w, nx, nz, new ChunkKey(w.getName(), chunkX, chunkZ), masks);
                         database.saveBorderMasks(nk.world, nx, nz, masks[0], masks[1]);
                     }
                     borderRecorded.add(nk);
@@ -835,6 +844,41 @@ public class BiomeSnowManager {
             }
         }
         return new byte[][]{snowMask, iceMask};
+    }
+
+    /**
+     * Winter biomes spill snow up to a few blocks into neighbouring chunks (biome lookups
+     * are blurred across cell borders). Snow or ice in the strip next to a neighbour that is
+     * already converted may therefore come from the event, so it is not recorded as
+     * pre-existing. {@code ignore} is a neighbour that must not count as converted yet.
+     */
+    private void clearSpillStrips(BiomeSnapshotDatabase database, World w, int chunkX, int chunkZ,
+                                  ChunkKey ignore, byte[][] masks) {
+        final int strip = 4;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                ChunkKey nk = new ChunkKey(w.getName(), chunkX + dx, chunkZ + dz);
+                if (nk.equals(ignore) || !isConverted(database, nk)) continue;
+                int fromX = dx < 0 ? 0 : (dx > 0 ? 16 - strip : 0), toX = dx < 0 ? strip : 16;
+                int fromZ = dz < 0 ? 0 : (dz > 0 ? 16 - strip : 0), toZ = dz < 0 ? strip : 16;
+                for (int x = fromX; x < toX; x++) {
+                    for (int z = fromZ; z < toZ; z++) {
+                        BiomeSnapshotDatabase.BiomeSnapshot3D.clearBit(masks[0], x, z);
+                        BiomeSnapshotDatabase.BiomeSnapshot3D.clearBit(masks[1], x, z);
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean isConverted(BiomeSnapshotDatabase database, ChunkKey key) {
+        if (knownLayouts.containsKey(key)) return true;
+        try {
+            return database.hasChunk(key.world, key.x, key.z);
+        } catch (SQLException e) {
+            return true; // unknown: rather clean up a natural snow layer than keep event snow
+        }
     }
 
     /**
@@ -1138,6 +1182,8 @@ public class BiomeSnowManager {
 
     private volatile WrappedTask convertTask;
     private volatile int convertTotal, convertScheduled, convertDone;
+    /** Identifies the current conversion; chunks of a cancelled run finishing late are ignored. */
+    private volatile long convertRunId;
 
     /** @return {@code true} while {@code /xmas biome convert-all} is running */
     public boolean isConvertRunning() {
@@ -1164,7 +1210,9 @@ public class BiomeSnowManager {
         final int cx0 = spawn.getBlockX() >> 4, cz0 = spawn.getBlockZ() >> 4;
         // Coordinates are derived from the index: no list of millions of entries on the main thread
         final int side = 2 * r + 1;
-        convertTotal = side * side;
+        final int total = side * side;
+        final long run = ++convertRunId;
+        convertTotal = total;
         convertScheduled = 0;
         convertDone = 0;
         final int budget = Math.max(1, plugin.getConfig().getInt("biome.convertAll.perTick", 2));
@@ -1175,11 +1223,12 @@ public class BiomeSnowManager {
 
         final Runnable chunkFinished = () -> {
             int d = done.incrementAndGet();
+            if (run != convertRunId) return;
             convertDone = d;
-            if (d % 200 == 0 || d == convertTotal) {
-                progress.accept(lang.getMessage("log.convert.progress", d, convertTotal));
+            if (d % 200 == 0 || d == total) {
+                progress.accept(lang.getMessage("log.convert.progress", d, total));
             }
-            if (d == convertTotal) {
+            if (d == total) {
                 progress.accept(lang.getMessage("log.convert.complete", d, (System.currentTimeMillis() - start) / 1000.0));
                 cancelConvertAll();
             }
@@ -1187,7 +1236,7 @@ public class BiomeSnowManager {
 
         convertTask = scheduler.runGlobalTaskTimer(() -> {
             int planned = 0;
-            while (planned < budget && convertScheduled < convertTotal && loading.get() < maxLoading) {
+            while (planned < budget && convertScheduled < total && loading.get() < maxLoading) {
                 int index = convertScheduled++;
                 planned++;
                 final int chunkX = cx0 + index / side - r, chunkZ = cz0 + index % side - r;
@@ -1219,6 +1268,7 @@ public class BiomeSnowManager {
 
     /** Stops a running conversion (already scheduled chunks still finish). */
     public void cancelConvertAll() {
+        convertRunId++;
         if (convertTask != null) {
             convertTask.cancel();
             convertTask = null;
@@ -1286,7 +1336,10 @@ public class BiomeSnowManager {
                     info.originalNaturallySnowy = isNaturallySnowyBiome(info.original);
                     info.originalNaturallyIcy = isNaturallyIcyBiome(info.original);
                 }
-            } catch (SQLException ignored) {}
+            } catch (SQLException | RuntimeException e) {
+                // Unreadable snapshot: reported as "no snapshot", details only in debug mode
+                plugin.debug("Snapshot of chunk " + cx + "," + cz + " could not be read: " + e.getMessage());
+            }
         }
         return info;
     }
@@ -1453,6 +1506,7 @@ public class BiomeSnowManager {
             // Remember columns that already carry a snow layer or ice on the surface: those
             // existed before the event (natural or player-placed) and are kept on restore
             byte[][] masks = surfaceMasks(w, c.getX(), c.getZ());
+            clearSpillStrips(database, w, c.getX(), c.getZ(), null, masks);
 
             database.saveChunk3D(key.world, key.x, key.z, biomes3D, minY, yStep, masks[0], masks[1]);
             knownLayouts.put(key, layout);
@@ -1536,9 +1590,13 @@ public class BiomeSnowManager {
         } catch (Throwable ignored) {}
     }
 
+    /** Largest accepted {@code /xmas biome set} radius (65 x 65 chunks). */
+    public static final int MAX_SET_RADIUS = 32;
+
     /**
      * Manual override for problem spots ({@code /xmas biome set}). Chunks set this way
-     * are excluded from the automatic bubble until the next stop/restore.
+     * are excluded from the automatic bubble until the next stop/restore. Excluded areas
+     * ({@code biome.exclude}) are skipped like everywhere else.
      *
      * @return number of chunks scheduled (not the number actually changed)
      */
@@ -1553,12 +1611,16 @@ public class BiomeSnowManager {
         Location loc = p.getLocation();
         int baseCX = loc.getBlockX() >> 4;
         int baseCZ = loc.getBlockZ() >> 4;
+        int radius = Math.max(0, Math.min(MAX_SET_RADIUS, radiusChunks));
 
         int totalChunks = 0;
-        for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
-            for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
                 final int chunkX = baseCX + dx;
                 final int chunkZ = baseCZ + dz;
+                if (plugin.getRegionIntegration() != null && plugin.getRegionIntegration().isBiomeExcluded(w, chunkX, chunkZ)) {
+                    continue;
+                }
 
                 // Mark synchronously BEFORE the region tasks start, otherwise the bubble
                 // timer could overwrite the manual change

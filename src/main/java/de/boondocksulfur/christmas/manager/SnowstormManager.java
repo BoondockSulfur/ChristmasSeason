@@ -126,8 +126,6 @@ public class SnowstormManager {
         desiredStorm = on;
         scheduler.runGlobalTask(this::enforce);
     }
-    public boolean toggleStorm() { setStorm(!desiredStorm); return desiredStorm; }
-    public boolean isStorm() { return desiredStorm; }
 
     /**
      * Storm for {@code seconds}, then back to the previous state: the auto phases continue with
@@ -160,12 +158,5 @@ public class SnowstormManager {
         w.setStorm(false);
         w.setThundering(false);
         try { w.setClearWeatherDuration(20 * 60 * 5); } catch (Throwable ignored) { w.setWeatherDuration(20 * 60 * 5); }
-    }
-
-    /** Clears the weather for an hour; global scheduler only. */
-    public void forceClearLong(World w) {
-        w.setStorm(false);
-        w.setThundering(false);
-        try { w.setClearWeatherDuration(20 * 60 * 60); } catch (Throwable ignored) { w.setWeatherDuration(20 * 60 * 60); }
     }
 }

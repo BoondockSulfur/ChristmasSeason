@@ -3,12 +3,11 @@
 # Codes couleur avec '&'. Les messages de console (log.*) absents ici restent en anglais.
 # ========================================
 
-prefix: "&b[Xmas]&7"
 no-permission: "&cVous n'avez pas la permission."
 
 # Commandes - /xmas
 command:
-  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|debug>"
+  usage: "&b/xmas &7<on|off|status|reload|biome|storm|backup|update|feature|stats|debug>"
   players-only: "&cCette commande ne peut être utilisée qu'en jeu."
 
   # Guillemets nécessaires : YAML lit 'on'/'off' comme des booléens
@@ -17,6 +16,7 @@ command:
     restore-running: "&c&lUne restauration des biomes est encore en cours ! &7Veuillez patienter jusqu'à la fin."
     already-active: "&eChristmasSeason est déjà actif. &7Utilisez '/xmas reload' pour redémarrer les fonctions."
     activation-running: "&eChristmasSeason est en cours d'activation (sauvegarde SAFE). &7Veuillez patienter un instant."
+    fix-running: "&eUn fix-diff est en cours. &7Veuillez patienter jusqu'à la fin."
     backup-failed: "&c&lATTENTION : la sauvegarde SAFE n'a pas pu être créée ! &7Vérifiez l'espace disque et les droits du dossier de sauvegarde."
     snapshot-disabled: "&c&lATTENTION : le système de snapshots est désactivé (enableSnapshot: false) ! &cLes biomes sont modifiés SANS sauvegarde - aucune restauration automatique possible."
 
@@ -51,6 +51,7 @@ command:
       usage: "&b/xmas biome set &e<BIOME> &7[rayon_chunks]"
       unknown-biome: "&cBiome inconnu."
       invalid-radius: "&cNombre invalide pour le rayon."
+      radius-too-large: "&cLe rayon {0} est trop grand - au maximum &f{1} &cchunks sont autorisés."
       only-active: "&c/xmas biome set ne fonctionne que si ChristmasSeason est actif. &7Lancez d'abord '/xmas on'."
       success: "&aBiome défini : &e{0} &7chunk(s) planifié(s)."
 
@@ -74,6 +75,7 @@ command:
     compare:
       usage: "&b/xmas biome compare &e<ID-sauvegarde> &7- compare les biomes actuels avec une sauvegarde"
       running: "&7Comparaison des biomes avec la sauvegarde... &7Cela peut prendre un moment."
+      already-running: "&eUne comparaison ou un fix-diff est déjà en cours. &7Veuillez patienter jusqu'à la fin."
       failed: "&c✗ La comparaison a échoué ! Voir la console."
       header: "&6═══ RÉSULTAT DE LA COMPARAISON ═══"
       backup: "&7Sauvegarde : &f{0}"
@@ -90,6 +92,7 @@ command:
       warning: "&c&lATTENTION : &7tous les chunks différents seront écrasés par les biomes de la sauvegarde !"
       confirm: "&eConfirmez avec : &f/xmas biome fix-diff {0} confirm"
       running: "&7Correction des différences... &7Cela peut prendre quelques minutes."
+      blocked-active: "&c/xmas biome fix-diff ne fonctionne que lorsque l'événement est désactivé. &7Exécutez d'abord '/xmas off'."
       done: "&a✓ Correction terminée ! &7Restaurés : &f{0} &7chunks"
       failed: "&c✗ La correction a échoué ! Voir la console."
 
@@ -137,7 +140,7 @@ command:
     available: "&a&lMise à jour disponible ! &7Actuelle : &c{0} &7- Dernière : &a{1}"
     links: "&7Téléchargement : &f{0} &7| &f{1}"
     up-to-date: "&a✓ Vous utilisez la dernière version &7({0})."
-    failed: "&c✗ La recherche de mises à jour a échoué. &7Pas de connexion à Modrinth ou GitHub."
+    failed: "&c✗ La recherche de mises à jour a échoué. &7Pas de connexion à Modrinth."
 
   backup:
     usage: "&b/xmas backup &7<list|restore|create|clear>"
@@ -209,6 +212,31 @@ update:
   latest: "&7Dernière version : &a{0}"
   download: "&7Téléchargement :"
   footer: "&8&l&m                                    "
+
+# /xmasoptout
+optout:
+  usage: "&b/xmasoptout &7<wichtel|elves|snowmen|all> &8- active ou désactive un type de créature pour vous"
+  status-header: "&6&lCréatures festives pour vous :"
+  status-line: "&7{0} : {1}"
+  state-on: "&aactif"
+  state-off: "&cdésactivé"
+  opted-out: "&7Vous avez désactivé &f{0}&7."
+  opted-in: "&7De nouveau actifs pour vous : &f{0}&7."
+  category:
+    wichtel: "Lutins"
+    elves: "Elfes"
+    snowmen: "Bonshommes de neige"
+    all: "toutes les créatures festives"
+
+# Wichtel pranks and elf help
+mobs:
+  wichtel:
+    tie-shoes: "&aUn lutin a noué vos lacets ensemble !"
+  elves:
+    return-loot: "&bUn elfe vous a rapporté un de vos objets !"
+    heal: "&bLa magie d'un elfe apaise vos blessures."
+    treat: "&bUn elfe a préparé quelque chose au four pour vous !"
+    gift-trail: "&bUn elfe vous montre le chemin vers un cadeau !"
 
 # Messages de console également envoyés aux joueurs (les autres restent en anglais)
 log:
