@@ -37,7 +37,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **Whole-world conversion:** `/xmas biome convert-all` for maps and servers that want everything white
 - **Runtime toggles:** `/xmas feature <name> on|off` without editing the config
 - **Gift statistics:** first opener is tracked, `/xmas stats`, PlaceholderAPI placeholders, API events for other plugins
-- **11 languages:** English, German, French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese (`language` in config.yml)
+- **9 languages:** English, German, French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch and Italian (`language` in config.yml)
 
 ### 🛡️ Protection & Safety
 - **Region Protection:** No spawns in WorldGuard regions or GriefPrevention claims (soft dependency)
@@ -133,7 +133,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 active: false
 snowWorld: "world"
 snowWorlds: []            # additional snow worlds
-language: "en"  # en, de, fr, es, pt_BR, pl, ru, nl, it, tr, zh_CN
+language: "en"  # en, de, fr, es, pt_BR, pl, ru, nl, it
 
 schedule:
   enabled: false

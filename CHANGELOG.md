@@ -5,7 +5,7 @@ All notable changes to the ChristmasSeason plugin will be documented in this fil
 ## [2.5.0] - 2026-11-17
 
 ### Added
-- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch, Italian, Turkish and Simplified Chinese (`language`); console messages stay English.
+- **Languages:** French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch and Italian (`language`); console messages stay English.
 - **Wichtel** carry off items from the ground or item frames (back in place when they die or disappear) and play harmless pranks; **elves** bring stolen items back, heal, hand out treats, show the way to gifts and grow crops. Every feature can be switched off, nothing happens in WorldGuard regions or claims.
 - **Opt-out:** `/xmasoptout` lets players switch Wichtel, elves or snowmen off for themselves; snowmen pelt players and hostile mobs again (knockback, no damage) and leave snow trails only under the open sky.
 
