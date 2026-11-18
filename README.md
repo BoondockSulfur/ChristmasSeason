@@ -37,7 +37,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **Whole-world conversion:** `/xmas biome convert-all` for maps and servers that want everything white
 - **Runtime toggles:** `/xmas feature <name> on|off` without editing the config
 - **Gift statistics:** first opener is tracked, `/xmas stats`, PlaceholderAPI placeholders, API events for other plugins
-- **9 languages:** English, German, French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch and Italian (`language` in config.yml)
+- **9 languages:** English, German, French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch and Italian (`language` in config.yml). Translations are machine-assisted - please report mistakes on [GitHub](https://github.com/BoondockSulfur/ChristmasSeason/issues)
 
 ### 🛡️ Protection & Safety
 - **Region Protection:** No spawns in WorldGuard regions or GriefPrevention claims (soft dependency)
