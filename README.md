@@ -13,7 +13,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 - **3D-Biome Changes:** Works with 1.18+ Multi-Y-Level Biomes
 - **Automatic Restore:** Original biomes are saved in SQLite database
 - **Smart Caching:** Performance-optimized with budget system (prevents TPS spikes)
-- **Blacklist:** Nether/End/Cave biomes remain unchanged
+- **Blacklist:** Nether/End biomes remain unchanged, cave biomes are only converted where they reach the surface
 
 ### 🌨️ Snowstorms
 - **Auto Mode:** Alternates between snowfall and sunshine
@@ -73,7 +73,7 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.5.0.jar`
+1. **Download:** Get `ChristmasSeason-2.5.1.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)

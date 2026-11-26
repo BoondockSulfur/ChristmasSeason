@@ -110,8 +110,26 @@ public class BiomeSnowManager {
     /** Asynchronous chunk loads kept in flight, as a multiple of the chunks handled per tick. */
     private static final int LOADS_PER_BUDGET = 8;
 
-    /** Pending chunks further than this beyond the view distance are dropped. */
+    /** Pending chunks further than this beyond the view distance move to the missed queue. */
     private static final int PENDING_RANGE_MARGIN = 2;
+
+    /** Chunks a player left behind unconverted; they move to {@link #missedReady} once loaded. */
+    private final Set<ChunkKey> missedChunks = Collections.synchronizedSet(new LinkedHashSet<>());
+    /** Loaded missed chunks, converted with the budget the players leave unused. */
+    private final Set<ChunkKey> missedReady = Collections.synchronizedSet(new LinkedHashSet<>());
+    /** Upper bound of each missed queue; the oldest entries are dropped first. */
+    private static final int MAX_MISSED = 20000;
+
+    /** Chunks with a pending re-check after blocks above a cave biome were removed. */
+    private final Set<ChunkKey> recheckScheduled = ConcurrentHashMap.newKeySet();
+    private static final long RECHECK_DELAY_TICKS = 40L;
+    /** Cave biome cells reaching this close below the surface are converted like surface cells. */
+    private static final int CAVE_SURFACE_MARGIN = CELL;
+
+    /** Multiplier of {@code perTickBudget} set by the adaptive budget (1 = config value). */
+    private volatile int budgetMultiplier = 1;
+    /** Ticks between two adaptive budget updates. */
+    private static final int ADAPTIVE_INTERVAL_TICKS = 40;
 
     // -------------------------------------------------------------- lifecycle
 
@@ -191,6 +209,8 @@ public class BiomeSnowManager {
         }
         playerBubbleTasks.clear();
         playerPendingChunks.clear();
+        clearMissed();
+        budgetMultiplier = 1;
 
         processedChunks.clear();
         manualChunks.clear();
@@ -220,12 +240,14 @@ public class BiomeSnowManager {
         if (!plugin.getConfig().getBoolean("biome.playerBubble.enabled", true)) return;
 
         final int period = Math.max(5, plugin.getConfig().getInt("biome.playerBubble.tickIntervalTicks", 10));
-        final int budget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 8));
-        final double creditPerTick = (double) budget / period;
+        final int baseBudget = Math.max(1, plugin.getConfig().getInt("biome.playerBubble.perTickBudget", 8));
         final int[] tick = {0};
         final double[] credit = {0.0};
 
         globalBubbleTask = scheduler.runGlobalTaskTimer(() -> {
+            if (tick[0] % ADAPTIVE_INTERVAL_TICKS == 0) updateBudgetMultiplier();
+            final int budget = baseBudget * budgetMultiplier;
+            final double creditPerTick = (double) budget / period;
             if (tick[0]++ % period == 0) {
                 for (World w : plugin.getSnowWorlds()) {
                     for (Player p : w.getPlayers()) {
@@ -275,7 +297,7 @@ public class BiomeSnowManager {
 
     /** Stops the per-player biome timer. */
     public void stopPlayerTracking(Player player) {
-        playerPendingChunks.remove(player.getUniqueId());
+        moveToMissed(playerPendingChunks.remove(player.getUniqueId()));
         WrappedTask task = playerBubbleTasks.remove(player.getUniqueId());
         if (task != null) {
             task.cancel();
@@ -289,17 +311,23 @@ public class BiomeSnowManager {
      * pre-generation, spawn chunks and other plugins loading far-away chunks neither
      * bloat the snapshot database nor bypass the per-tick budget.
      *
-     * <p>On Folia this is a no-op: the per-player timer already covers the chunks
-     * around every player within one interval.
+     * <p>Chunks a player left behind unconverted move to the ready queue as soon as they
+     * load again. Apart from that this is a no-op on Folia: the per-player timer already
+     * covers the chunks around every player within one interval.
      */
     public void onChunkLoad(Chunk chunk) {
         if (!isConversionAllowed()) return;
-        if (scheduler.isFolia()) return;
         if (!plugin.getConfig().getBoolean("biome.playerBubble.enabled", true)) return;
 
         World w = chunk.getWorld();
         ChunkKey key = new ChunkKey(w.getName(), chunk.getX(), chunk.getZ());
         if (processedChunks.contains(key) || manualChunks.contains(key)) return;
+
+        if (missedChunks.remove(key)) {
+            addBounded(missedReady, key);
+            return;
+        }
+        if (scheduler.isFolia()) return;
 
         int r = Math.max(0, plugin.getConfig().getInt("biome.playerBubble.radiusChunks", 2));
         for (Player p : w.getPlayers()) {
@@ -361,6 +389,7 @@ public class BiomeSnowManager {
         knownLayouts.clear();
         borderRecorded.clear();
         playerPendingChunks.clear();
+        clearMissed();
         chunkRetryCount.clear();
 
         final BiomeSnapshotDatabase database = db;
@@ -449,6 +478,7 @@ public class BiomeSnowManager {
             knownLayouts.clear();
             borderRecorded.clear();
             playerPendingChunks.clear();
+            clearMissed();
             chunkRetryCount.clear();
 
             // Successfully restored chunks were deleted individually; failed ones stay
@@ -947,7 +977,7 @@ public class BiomeSnowManager {
     public void ensureAroundPlayer(Player p) {
         World w = p.getWorld();
         if (!plugin.isSnowWorld(w)) {
-            playerPendingChunks.remove(p.getUniqueId());
+            moveToMissed(playerPendingChunks.remove(p.getUniqueId()));
             return;
         }
 
@@ -972,13 +1002,31 @@ public class BiomeSnowManager {
             scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(w, chunkX, chunkZ), () -> {
                 if (!w.isChunkLoaded(chunkX, chunkZ)) {
                     // Near the player it is still loading and gets another turn. Further away it
-                    // stays unloaded; the radius scan collects it again once a player returns.
+                    // waits in the missed queue until it is loaded again.
+                    if (!plugin.isActive()) return;
                     boolean near = Math.max(Math.abs(chunkX - baseCX), Math.abs(chunkZ - baseCZ)) <= keepRange;
                     Set<ChunkKey> mine = playerPendingChunks.get(p.getUniqueId());
-                    if (near && mine != null && plugin.isActive()) mine.add(key);
+                    if (near && mine != null) mine.add(key);
+                    else markMissed(w, key);
                     return;
                 }
                 processChunkAt(w, chunkX, chunkZ);
+            });
+            scheduled++;
+        }
+
+        // Budget left over: chunks other players left behind that are loaded again
+        while (scheduled < budget) {
+            ChunkKey key = pollMissedReady();
+            if (key == null) break;
+            World mw = Bukkit.getWorld(key.world);
+            if (mw == null || !plugin.isSnowWorld(mw) || processedChunks.contains(key) || manualChunks.contains(key)) continue;
+            scheduler.runAtLocation(FoliaSchedulerHelper.chunkCenter(mw, key.x, key.z), () -> {
+                if (!mw.isChunkLoaded(key.x, key.z)) {
+                    if (plugin.isActive()) markMissed(mw, key);
+                    return;
+                }
+                processChunkAt(mw, key.x, key.z);
             });
             scheduled++;
         }
@@ -998,10 +1046,14 @@ public class BiomeSnowManager {
 
         Set<ChunkKey> pending = playerPendingChunks.computeIfAbsent(p.getUniqueId(), k -> ConcurrentHashMap.newKeySet());
         // Moving players add chunks faster than the budget converts them. Whatever they left
-        // behind is collected again as soon as a player is near it.
+        // behind goes to the missed queue and is converted once it is loaded and budget is free.
         final int keepRange = w.getViewDistance() + PENDING_RANGE_MARGIN;
-        pending.removeIf(k -> !k.world.equals(w.getName())
-                || Math.max(Math.abs(k.x - baseCX), Math.abs(k.z - baseCZ)) > keepRange);
+        pending.removeIf(k -> {
+            boolean drop = !k.world.equals(w.getName())
+                    || Math.max(Math.abs(k.x - baseCX), Math.abs(k.z - baseCZ)) > keepRange;
+            if (drop) markMissed(Bukkit.getWorld(k.world), k);
+            return drop;
+        });
 
         for (int dx = -r; dx <= r; dx++) {
             for (int dz = -r; dz <= r; dz++) {
@@ -1017,15 +1069,14 @@ public class BiomeSnowManager {
     /**
      * Paper/Purpur: converts up to {@code allowed} pending chunks on the main thread.
      * Players take turns, each turn takes the chunk nearest to that player. Chunks that
-     * are no longer loaded are dropped; they come back via the next collection or
-     * {@link #onChunkLoad} once a player is near again.
+     * are no longer loaded go to the missed queue; budget the players leave unused works
+     * off missed chunks that are loaded again.
      *
      * @return number of chunks actually converted
      */
     private int processPendingChunks(int allowed) {
         List<Player> players = new ArrayList<>();
         for (World w : plugin.getSnowWorlds()) players.addAll(w.getPlayers());
-        if (players.isEmpty()) return 0;
 
         int processed = 0;
         int emptyTurns = 0;
@@ -1039,12 +1090,109 @@ public class BiomeSnowManager {
             emptyTurns = 0;
 
             World w = p.getWorld();
-            if (!key.world.equals(w.getName()) || processedChunks.contains(key) || manualChunks.contains(key)) continue;
-            if (!w.isChunkLoaded(key.x, key.z)) continue;
+            if (processedChunks.contains(key) || manualChunks.contains(key)) continue;
+            if (!key.world.equals(w.getName()) || !w.isChunkLoaded(key.x, key.z)) {
+                markMissed(Bukkit.getWorld(key.world), key);
+                continue;
+            }
+            processChunkAt(w, key.x, key.z);
+            processed++;
+        }
+
+        while (processed < allowed) {
+            ChunkKey key = pollMissedReady();
+            if (key == null) break;
+            World w = Bukkit.getWorld(key.world);
+            if (w == null || !plugin.isSnowWorld(w) || processedChunks.contains(key) || manualChunks.contains(key)) continue;
+            if (!w.isChunkLoaded(key.x, key.z)) {
+                markMissed(w, key);
+                continue;
+            }
             processChunkAt(w, key.x, key.z);
             processed++;
         }
         return processed;
+    }
+
+    // ------------------------------------------------------------ missed chunks
+
+    /**
+     * Remembers a chunk that left a pending set unconverted: loaded chunks go straight to
+     * the ready queue, unloaded ones wait for {@link #onChunkLoad}.
+     */
+    private void markMissed(World w, ChunkKey key) {
+        if (w == null || !plugin.isSnowWorld(w)) return;
+        if (processedChunks.contains(key) || manualChunks.contains(key)) return;
+        if (w.isChunkLoaded(key.x, key.z)) {
+            missedChunks.remove(key);
+            addBounded(missedReady, key);
+        } else {
+            addBounded(missedChunks, key);
+        }
+    }
+
+    private void moveToMissed(Set<ChunkKey> keys) {
+        if (keys == null || !plugin.isActive()) return;
+        for (ChunkKey k : keys) markMissed(Bukkit.getWorld(k.world), k);
+    }
+
+    private static void addBounded(Set<ChunkKey> queue, ChunkKey key) {
+        synchronized (queue) {
+            if (!queue.contains(key) && queue.size() >= MAX_MISSED) {
+                Iterator<ChunkKey> it = queue.iterator();
+                it.next();
+                it.remove();
+            }
+            queue.add(key);
+        }
+    }
+
+    /** Removes and returns the oldest loaded missed chunk, or {@code null}. */
+    private ChunkKey pollMissedReady() {
+        synchronized (missedReady) {
+            Iterator<ChunkKey> it = missedReady.iterator();
+            if (!it.hasNext()) return null;
+            ChunkKey key = it.next();
+            it.remove();
+            return key;
+        }
+    }
+
+    private void clearMissed() {
+        missedChunks.clear();
+        missedReady.clear();
+        recheckScheduled.clear();
+    }
+
+    // ------------------------------------------------------------ adaptive budget
+
+    /**
+     * {@code biome.playerBubble.adaptiveBudget}: raises the budget multiplier step by step
+     * while the average tick time stays well below the target and falls back to the config
+     * value as soon as it exceeds the target. Paper/Purpur only; Folia has no global tick
+     * time and keeps the configured budget.
+     */
+    private void updateBudgetMultiplier() {
+        if (!plugin.getConfig().getBoolean("biome.playerBubble.adaptiveBudget.enabled", false)) {
+            budgetMultiplier = 1;
+            return;
+        }
+        int max = Math.max(1, Math.min(10, plugin.getConfig().getInt("biome.playerBubble.adaptiveBudget.maxMultiplier", 3)));
+        double target = Math.max(5.0, plugin.getConfig().getDouble("biome.playerBubble.adaptiveBudget.targetMspt", 30.0));
+        double mspt;
+        try {
+            mspt = Bukkit.getAverageTickTime();
+        } catch (Throwable t) {
+            budgetMultiplier = 1;
+            return;
+        }
+        int current = Math.min(budgetMultiplier, max);
+        if (mspt > target) current = 1;
+        else if (mspt < target * 0.75 && current < max) current++;
+        if (current != budgetMultiplier) {
+            plugin.verboseDebug("Adaptive budget: x" + current + " (mspt " + String.format(Locale.ROOT, "%.1f", mspt) + ")");
+        }
+        budgetMultiplier = current;
     }
 
     /** Removes and returns the pending chunk nearest to the player, or {@code null} if none is left. */
@@ -1108,13 +1256,15 @@ public class BiomeSnowManager {
         int[] layout = snapshotIfAbsent(w, chunk);
         if (layout == null) return;
         int[] range = applicableRange(w, layout);
-        if (range != null && applyUniformBiomeColumn(w, chunk, target, layout, range)) {
+        if (range != null && applyUniformBiomeColumn(w, chunk, target, layout, range, true)) {
             placeInstantSnow(w, chunk, range);
             refreshChunkSafe(w, chunk);
         }
 
         processedChunks.add(key);
         chunkRetryCount.remove(key);
+        missedChunks.remove(key);
+        missedReady.remove(key);
 
         if (processedChunks.size() > MAX_PROCESSED_CACHE) {
             // Drop ~20% of the entries; evicted chunks are simply re-checked (cheap: 9 samples)
@@ -1528,33 +1678,47 @@ public class BiomeSnowManager {
 
     /**
      * Sets the target biome on every allowed surface cell of the chunk, on the snapshot's
-     * layers inside {@code range}.
+     * layers inside {@code range}. Cave biomes are only changed where they reach the
+     * surface (see {@link #caveFloorY}).
      *
+     * @param quickCheck skip the chunk when nine surface samples already show the target biome
      * @return {@code true} if anything changed
      */
-    private boolean applyUniformBiomeColumn(World world, Chunk chunk, Biome target, int[] layout, int[] range) {
+    private boolean applyUniformBiomeColumn(World world, Chunk chunk, Biome target, int[] layout, int[] range, boolean quickCheck) {
         boolean modified = false;
         int bx = chunk.getX() << 4, bz = chunk.getZ() << 4;
         int yStart = layout[0], step = layout[1], layers = layout[2];
 
-        // Quick check with nine samples: corners, centre and edge midpoints
-        int sampleY = Math.max(range[0], Math.min(64, range[1] - 1));
-        int correctSamples = 0;
-        int[][] samples = {{0,0},{15,0},{0,15},{15,15},{8,8},{0,8},{15,8},{8,0},{8,15}};
-        for (int[] s : samples) {
-            if (world.getBiome(bx + s[0], sampleY, bz + s[1]) == target) correctSamples++;
-        }
-        if (correctSamples == samples.length) {
-            return false;
+        if (quickCheck) {
+            // Nine samples at the surface: corners, centre and edge midpoints
+            int correctSamples = 0;
+            int[][] samples = {{0,0},{15,0},{0,15},{15,15},{8,8},{0,8},{15,8},{8,0},{8,15}};
+            for (int[] s : samples) {
+                int surface = world.getHighestBlockYAt(bx + s[0], bz + s[1], org.bukkit.HeightMap.MOTION_BLOCKING_NO_LEAVES);
+                int sampleY = Math.max(range[0], Math.min(surface, range[1] - 1));
+                if (world.getBiome(bx + s[0], sampleY, bz + s[1]) == target) correctSamples++;
+            }
+            if (correctSamples == samples.length) {
+                return false;
+            }
         }
 
         for (int x = 0; x < 16; x += CELL) {
             for (int z = 0; z < 16; z += CELL) {
+                int caveFloor = Integer.MIN_VALUE; // computed on the first cave cell of this column
                 for (int layer = 0; layer < layers; layer++) {
                     int y = yStart + layer * step;
                     if (y < range[0] || y >= range[1]) continue;
                     Biome currentBiome = world.getBiome(bx + x, y, bz + z);
-                    if (currentBiome != target && isBiomeAllowedToChange(currentBiome)) {
+                    if (currentBiome == target) continue;
+                    boolean allowed;
+                    if (isCaveBiome(currentBiome)) {
+                        if (caveFloor == Integer.MIN_VALUE) caveFloor = caveFloorY(world, bx + x, bz + z);
+                        allowed = (y & ~(CELL - 1)) + CELL - 1 >= caveFloor;
+                    } else {
+                        allowed = isBiomeAllowedToChange(currentBiome);
+                    }
+                    if (allowed) {
                         world.setBiome(bx + x, y, bz + z, target);
                         modified = true;
                     }
@@ -1562,6 +1726,81 @@ public class BiomeSnowManager {
             }
         }
         return modified;
+    }
+
+    /**
+     * Lowest Y a cave biome cell must reach to count as surface: the lowest terrain surface
+     * (leaves ignored) of the cell's 4x4 columns minus {@link #CAVE_SURFACE_MARGIN}. A pit or
+     * a removed hill therefore lowers it.
+     */
+    private int caveFloorY(World world, int cellX, int cellZ) {
+        int lowest = Integer.MAX_VALUE;
+        for (int dx = 0; dx < CELL; dx++) {
+            for (int dz = 0; dz < CELL; dz++) {
+                lowest = Math.min(lowest, world.getHighestBlockYAt(cellX + dx, cellZ + dz, org.bukkit.HeightMap.MOTION_BLOCKING_NO_LEAVES));
+            }
+        }
+        return lowest - CAVE_SURFACE_MARGIN;
+    }
+
+    /** @return {@code true} for cave biomes (dripstone, lush caves, deep dark and custom ones) */
+    private static boolean isCaveBiome(Biome biome) {
+        if (biome == null) return false;
+        String name = biome.getKey().getKey().toUpperCase(Locale.ROOT);
+        return name.contains("CAVE") || name.contains("DEEP_DARK");
+    }
+
+    /**
+     * Called when players break or blow up blocks: if a cave biome sits right there, the chunk
+     * is checked again a moment later, so a cave biome that is now open to the sky turns into
+     * the winter biome too. Edits by WorldEdit or Axiom fire no such event and are not seen.
+     */
+    public void requestSurfaceRecheck(Block block) {
+        if (!isConversionAllowed()) return;
+        World w = block.getWorld();
+        int y = block.getY();
+        if (y < minChangeY(w) - CELL || y >= maxChangeY(w)) return;
+        if (!isCaveBiome(w.getBiome(block.getX(), y, block.getZ()))
+                && !isCaveBiome(w.getBiome(block.getX(), y - CELL, block.getZ()))) return;
+
+        ChunkKey key = new ChunkKey(w.getName(), block.getX() >> 4, block.getZ() >> 4);
+        if (manualChunks.contains(key) || !recheckScheduled.add(key)) return;
+        scheduler.runAtLocationLater(FoliaSchedulerHelper.chunkCenter(w, key.x, key.z), () -> {
+            recheckScheduled.remove(key);
+            recheckChunk(w, key);
+        }, RECHECK_DELAY_TICKS);
+    }
+
+    /** Re-applies the winter biome to an already converted chunk (no quick check). */
+    private void recheckChunk(World w, ChunkKey key) {
+        if (!isConversionAllowed() || manualChunks.contains(key) || !w.isChunkLoaded(key.x, key.z)) return;
+        if (plugin.getRegionIntegration() != null && plugin.getRegionIntegration().isBiomeExcluded(w, key.x, key.z)) return;
+
+        int[] layout = knownLayouts.get(key);
+        if (layout == null) {
+            BiomeSnapshotDatabase database = db;
+            if (database == null) {
+                if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) return;
+                layout = configLayout(w);
+            } else {
+                if (!database.isOpen()) return;
+                try {
+                    layout = database.loadChunkLayout(key.world, key.x, key.z);
+                } catch (SQLException e) {
+                    return;
+                }
+                // Not converted yet: the bubble takes care of it with a fresh snapshot
+                if (layout == null) return;
+                knownLayouts.put(key, layout);
+            }
+        }
+        int[] range = applicableRange(w, layout);
+        if (range == null) return;
+        Chunk chunk = w.getChunkAt(key.x, key.z);
+        if (applyUniformBiomeColumn(w, chunk, getTargetBiome(), layout, range, false)) {
+            plugin.verboseDebug("Chunk " + key.x + "," + key.z + " re-checked after digging: cave biome converted");
+            refreshChunkSafe(w, chunk);
+        }
     }
 
     /** Resends the chunk to nearby clients so biome colours update immediately. */
@@ -1633,7 +1872,7 @@ public class BiomeSnowManager {
                     int[] layout = snapshotIfAbsent(w, chunk);
                     if (layout == null) return;
                     int[] range = applicableRange(w, layout);
-                    if (range != null && applyUniformBiomeColumn(w, chunk, target, layout, range)) {
+                    if (range != null && applyUniformBiomeColumn(w, chunk, target, layout, range, true)) {
                         refreshChunkSafe(w, chunk);
                     }
                 });

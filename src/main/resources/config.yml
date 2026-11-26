@@ -44,6 +44,13 @@ biome:
     refreshClient: true     # resend chunks so clients see the new biome immediately
     tickIntervalTicks: 10   # how often chunks around players are collected (10 = every 0.5 seconds)
     perTickBudget: 8        # max chunks per interval, spread over its ticks on Paper (8 every 10 ticks = 16 chunks/s, about 1-2 ms per tick)
+    # Raise the budget while the server has headroom (Paper/Purpur; Folia keeps perTickBudget).
+    # It climbs one step every 2 seconds while the average tick time stays below 75% of
+    # targetMspt and drops back to perTickBudget as soon as it is exceeded.
+    adaptiveBudget:
+      enabled: false
+      targetMspt: 30        # average milliseconds per tick (50 = 20 TPS limit)
+      maxMultiplier: 3      # highest budget = perTickBudget x maxMultiplier
 
   # Leave these areas untouched by the biome bubble (lobbies, build areas, ...)
   exclude:

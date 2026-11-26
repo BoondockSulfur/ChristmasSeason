@@ -2,6 +2,15 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.5.1] - 2026-11-22
+
+### Fixed
+- **Biome:** cave biomes (e.g. dripstone caves) that reach the surface turn wintry; dug-out or blown-up spots are re-checked.
+- **Biome:** chunks left behind by fast players are converted as soon as they load again instead of being dropped.
+
+### Added
+- `biome.playerBubble.adaptiveBudget` (off by default): higher conversion budget while the server has headroom.
+
 ## [2.5.0] - 2026-11-17
 
 ### Added
