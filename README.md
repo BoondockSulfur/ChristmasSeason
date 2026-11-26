@@ -4,6 +4,8 @@
 
 A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gifts, and much more. Now with **Multi-Platform Support** for Paper, Purpur, **and Folia** (MC 1.21.3+ and 26.x)!
 
+Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/BoondockSulfur/ChristmasSeason-Fabric).
+
 ---
 
 ## 🌟 Features
@@ -68,6 +70,8 @@ A comprehensive Christmas plugin featuring biome snowfall, snowstorms, NPCs, gif
 **Automatic Detection:** The plugin detects the platform on startup and chooses the optimal strategy!
 
 > **Note:** Since v2.3.0 the plugin uses Paper's Adventure API - plain Spigot is no longer supported. Use Paper or a Paper fork.
+
+> **Fabric:** A Fabric/Quilt version with the same features is available as a separate mod: [ChristmasSeason-Fabric](https://github.com/BoondockSulfur/ChristmasSeason-Fabric).
 
 ---
 
