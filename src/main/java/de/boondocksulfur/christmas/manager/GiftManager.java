@@ -51,6 +51,8 @@ public class GiftManager {
     private final NamespacedKey giftChestKey;
     /** End of the chest's lifetime (epoch millis), so a restart keeps the remaining time. */
     private final NamespacedKey giftExpiresKey;
+    /** Layers of the snow layer the chest replaced (absent = none). */
+    private final NamespacedKey giftSnowKey;
     private final NamespacedKey giftOpenedKey;
 
     public GiftManager(ChristmasSeason plugin) {
@@ -59,6 +61,7 @@ public class GiftManager {
         this.scheduler = plugin.getFoliaScheduler();
         this.giftChestKey = new NamespacedKey(plugin, "gift-chest");
         this.giftExpiresKey = new NamespacedKey(plugin, "gift-expires");
+        this.giftSnowKey = new NamespacedKey(plugin, "gift-snow");
         this.giftOpenedKey = new NamespacedKey(plugin, "gift-opened");
     }
 
@@ -182,8 +185,7 @@ public class GiftManager {
                 trackedGifts.remove(loc);
                 WrappedTask lt = giftLifetimeTasks.remove(loc);
                 if (lt != null) lt.cancel();
-                ((Chest) state).getBlockInventory().clear();
-                loc.getBlock().setType(Material.AIR);
+                removeChest((Chest) state);
                 plugin.debug("Removed orphaned gift chest at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
             }
         }
@@ -214,9 +216,33 @@ public class GiftManager {
     private void removeIfMarked(Location loc) {
         Block block = loc.getBlock();
         if (block.getState() instanceof Chest chest && isMarkedGiftChest(chest)) {
-            // Containers drop their contents when replaced; the loot vanishes with the chest
-            chest.getBlockInventory().clear();
-            try { block.setType(Material.AIR, false); } catch (Throwable ignored) { block.setType(Material.AIR); }
+            removeChest(chest);
+        }
+    }
+
+    /**
+     * Removes a gift chest. While the event or a restore runs, the snow layer it replaced comes
+     * back (the restore then judges it like any other snow); otherwise the spot becomes air and
+     * the ground below loses its snowy top.
+     */
+    private void removeChest(Chest chest) {
+        Block block = chest.getBlock();
+        Byte layers = chest.getPersistentDataContainer().get(giftSnowKey, PersistentDataType.BYTE);
+        // Containers drop their contents when replaced; the loot vanishes with the chest
+        chest.getBlockInventory().clear();
+        boolean snowBack = layers != null && layers > 0
+                && (plugin.isActive() || plugin.getBiomeSnowManager().isRestoring());
+        if (snowBack) {
+            org.bukkit.block.data.type.Snow snow = (org.bukkit.block.data.type.Snow) Material.SNOW.createBlockData();
+            snow.setLayers(Math.max(snow.getMinimumLayers(), Math.min(snow.getMaximumLayers(), layers)));
+            block.setBlockData(snow, false);
+            return;
+        }
+        block.setType(Material.AIR, false);
+        Block below = block.getRelative(BlockFace.DOWN);
+        if (below.getBlockData() instanceof org.bukkit.block.data.Snowable ground && ground.isSnowy()) {
+            ground.setSnowy(false);
+            below.setBlockData(ground, false);
         }
     }
 
@@ -278,6 +304,7 @@ public class GiftManager {
         Bukkit.getPluginManager().callEvent(event);
         if (event.isCancelled()) return false;
 
+        int replacedSnow = b.getBlockData() instanceof org.bukkit.block.data.type.Snow snow ? snow.getLayers() : 0;
         try { b.setType(Material.CHEST, false); } catch (Throwable ignored) { b.setType(Material.CHEST); }
 
         BlockState state = b.getState();
@@ -286,6 +313,7 @@ public class GiftManager {
         chest.customName(lang.getComponent("entity.gift-chest"));
         chest.getPersistentDataContainer().set(giftChestKey, PersistentDataType.BYTE, (byte) 1);
         chest.getPersistentDataContainer().set(giftExpiresKey, PersistentDataType.LONG, System.currentTimeMillis() + lifetimeTicks() * 50L);
+        if (replacedSnow > 0) chest.getPersistentDataContainer().set(giftSnowKey, PersistentDataType.BYTE, (byte) replacedSnow);
         chest.update();
 
         fillGiftInventory(chest.getBlockInventory());

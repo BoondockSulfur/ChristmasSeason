@@ -7,7 +7,7 @@ All notable changes to the ChristmasSeason plugin will be documented in this fil
 ### Fixed
 - **Biome:** natural snow next to converted chunks is no longer removed on restore.
 - **Spawns:** gifts, decorations and mobs spawn on snow layers again (almost none spawned on snowy ground).
-- **Gifts:** removed gift chests no longer drop their loot.
+- **Gifts:** removed gift chests no longer drop their loot and put back the snow layer they replaced (no snowy ground left behind).
 
 ### Changed
 - Gifts, decorations and mobs keep their remaining lifetime across restarts.
