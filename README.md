@@ -1,4 +1,4 @@
-# ChristmasSeason v2.4 🎄
+# ChristmasSeason 🎄
 
 **Transform your Minecraft world into a winter wonderland!**
 
@@ -14,7 +14,8 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 - **Player-Bubble:** Snow biomes appear in a configurable radius around players
 - **3D-Biome Changes:** Works with 1.18+ Multi-Y-Level Biomes
 - **Automatic Restore:** Original biomes are saved in SQLite database
-- **Smart Caching:** Performance-optimized with budget system (prevents TPS spikes)
+- **Smart Caching:** Performance-optimized with budget system (prevents TPS spikes), adaptive budget keeps up with fast-flying players
+- **Natural snow stays:** only snow and ice from the event are removed on restore
 - **Blacklist:** Nether/End biomes remain unchanged, cave biomes are only converted where they reach the surface
 
 ### 🌨️ Snowstorms
@@ -37,7 +38,7 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 - **Exclusion zones:** rectangles, WorldGuard region IDs or all GriefPrevention claims stay free of snow biomes
 - **Instant snow:** optional snow layers and frozen water the moment a chunk is converted
 - **Whole-world conversion:** `/xmas biome convert-all` for maps and servers that want everything white
-- **Runtime toggles:** `/xmas feature <name> on|off` without editing the config
+- **Runtime toggles:** `/xmas feature <name> on|off` without editing the config (only that one line in the file changes)
 - **Gift statistics:** first opener is tracked, `/xmas stats`, PlaceholderAPI placeholders, API events for other plugins
 - **9 languages:** English, German, French, Spanish, Portuguese (Brazil), Polish, Russian, Dutch and Italian (`language` in config.yml). Translations are machine-assisted - please report mistakes on [GitHub](https://github.com/BoondockSulfur/ChristmasSeason/issues)
 
@@ -46,7 +47,7 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 - **Backup System:** Automatic SAFE/timestamp/emergency backups of the biome database (WAL-safe, rotated)
 - **Startup Safety Checks:** DB integrity check, crash detection via emergency backups
 - **Update Checker:** `/xmas update check` + clickable admin notifications (Modrinth/CurseForge), can be disabled
-- **Restart-safe tracking:** gift chests, decorations and event mobs are recognised again after a restart or `/xmas reload` (caps, lifetimes and `/xmas off` cleanup keep working)
+- **Restart-safe tracking:** gift chests, decorations and event mobs are recognised again after a restart or `/xmas reload` and keep their remaining lifetime (caps and `/xmas off` cleanup keep working)
 - **Custom biome support:** snapshots store fully namespaced biome keys, so Terralith/data-pack biomes restore correctly
 
 ### 🔧 Performance Features
@@ -64,7 +65,7 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 | Platform | Status | Scheduler Type | Performance |
 |----------|--------|----------------|-------------|
 | **Paper** | ✅ Tested (1.21.10, 1.21.11, 26.3) | Global Timer | 18-20 TPS |
-| **Folia** | ✅ Tested (1.21.11, 26.1.2) | Player-based Entity Scheduler | Optimal for 50+ players |
+| **Folia** | ✅ Tested (1.21.11, 26.1.2, 26.3) | Player-based Entity Scheduler | Optimal for 50+ players |
 | **Purpur** | ✅ Compatible | Global Timer | 18-20 TPS |
 
 **Automatic Detection:** The plugin detects the platform on startup and chooses the optimal strategy!
@@ -134,7 +135,6 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 ### Default Settings (recommended):
 
 ```yaml
-active: false
 snowWorld: "world"
 snowWorlds: []            # additional snow worlds
 language: "en"  # en, de, fr, es, pt_BR, pl, ru, nl, it
@@ -158,6 +158,10 @@ biome:
     refreshClient: true     # Immediate client updates
     tickIntervalTicks: 10   # Every 0.5 seconds
     perTickBudget: 8        # 8 chunks per interval (16 chunks/s)
+    adaptiveBudget:
+      enabled: true         # up to perTickBudget x maxMultiplier while the server has headroom
+      targetMspt: 30
+      maxMultiplier: 3
 
   exclude:
     areas: []               # - {world: world, x1: -100, z1: -100, x2: 100, z2: 100}
@@ -330,7 +334,7 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 
 ### Problem: Biomes don't change
 **Solution:**
-1. Check `/xmas status` - is `active: true`?
+1. Check `/xmas status` - does it show `ON`?
 2. Check `snowWorld: "world"` in config.yml
 3. Are you in the correct world?
 
@@ -359,6 +363,12 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 ---
 
 ## 🔄 Migration Guide
+
+### From v2.5.x to v2.6.0
+
+1. **Stop the server**
+2. **Replace the JAR** with `ChristmasSeason-2.6.0.jar`
+3. **Start the server** - the event state (`active`) moves from `config.yml` to `data/state.yml` automatically; the old `active` line in `config.yml` is ignored from now on
 
 ### From v2.4.x to v2.5.0
 
@@ -413,6 +423,17 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 ## 📝 Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+
+**v2.6.0 Highlights:**
+- ❄️ Natural snow next to converted chunks stays after `/xmas off`
+- 🎁 Gifts, decorations and mobs spawn on snowy ground again; gift chests no longer drop their loot or leave snowy ground behind
+- 🔄 Remaining lifetimes survive restarts; event state in `data/state.yml`, `/xmas feature` no longer rewrites config.yml
+- ⚡ Adaptive budget on by default
+- 🧵 Fabric/Quilt version available: [ChristmasSeason-Fabric](https://github.com/BoondockSulfur/ChristmasSeason-Fabric)
+
+**v2.5.x Highlights:**
+- 🧝 Wichtel pranks, helpful elves, player opt-out, `mobs.yml`
+- 🕳️ Cave biomes reaching the surface turn wintry; chunks skipped by fast players are converted later
 
 **v2.4.0 Highlights:**
 - 🔥 Backups are complete again (WAL checkpoint before every copy - timestamp and emergency backups silently lost the newest chunks before)
@@ -483,4 +504,4 @@ scheduler.runForEntity(entity, () -> { ... });
 
 ---
 
-**Have fun with ChristmasSeason v2.4! 🎄❄️**
+**Have fun with ChristmasSeason! 🎄❄️**
