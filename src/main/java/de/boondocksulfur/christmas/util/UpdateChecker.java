@@ -29,7 +29,9 @@ public class UpdateChecker {
 
     private static final String MODRINTH_SLUG = "christmas-season";
 
-    private static final String MODRINTH_API = "https://api.modrinth.com/v2/project/" + MODRINTH_SLUG + "/version";
+    // The Modrinth project also holds the Fabric version; only plugin builds count as updates
+    private static final String MODRINTH_API = "https://api.modrinth.com/v2/project/" + MODRINTH_SLUG + "/version?loaders="
+            + java.net.URLEncoder.encode("[\"paper\",\"folia\",\"purpur\"]", java.nio.charset.StandardCharsets.UTF_8);
     private static final String MODRINTH_URL = "https://modrinth.com/plugin/" + MODRINTH_SLUG;
     private static final String CURSEFORGE_URL = "https://www.curseforge.com/minecraft/bukkit-plugins/christmas-season";
 
@@ -129,8 +131,8 @@ public class UpdateChecker {
     }
 
     /**
-     * Newest <em>release</em> version on Modrinth (versions are sorted newest first;
-     * alpha/beta builds are skipped).
+     * Newest plugin <em>release</em> version on Modrinth (versions are sorted newest first;
+     * alpha/beta builds and Fabric versions are skipped).
      */
     private String checkModrinth() {
         try {

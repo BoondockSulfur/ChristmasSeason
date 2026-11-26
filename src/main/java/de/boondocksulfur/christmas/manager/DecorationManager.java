@@ -13,6 +13,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
+import de.boondocksulfur.christmas.util.Lifetime;
 import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.SpawnUtil;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
@@ -98,7 +99,7 @@ public class DecorationManager {
                 && entity.getPersistentDataContainer().has(decorationKey, PersistentDataType.BYTE);
     }
 
-    /** Adopts a decoration item found after a restart: tracks it and starts a fresh lifetime. */
+    /** Adopts a decoration item found after a restart: tracks it and continues its lifetime. */
     public void adopt(Item item) {
         UUID id = item.getUniqueId();
         if (!trackedDecorations.add(id)) return;
@@ -185,6 +186,6 @@ public class DecorationManager {
             Entity live = Bukkit.getEntity(itemId);
             if (live != null && live.isValid()) live.remove();
             trackedDecorations.remove(itemId);
-        }, () -> trackedDecorations.remove(itemId), lifetime * 20L);
+        }, () -> trackedDecorations.remove(itemId), Lifetime.ticksLeft(plugin, item, lifetime * 20L));
     }
 }

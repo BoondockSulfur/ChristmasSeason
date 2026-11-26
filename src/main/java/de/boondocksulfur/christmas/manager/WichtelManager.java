@@ -8,6 +8,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
+import de.boondocksulfur.christmas.util.Lifetime;
 import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.SpawnUtil;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
@@ -158,7 +159,7 @@ public class WichtelManager {
 
     /**
      * Adopts a tagged mob (after restart/reload or chunk load): tracks it, starts its
-     * AI task and a fresh lifetime timer. Must run on the entity's thread.
+     * AI task and its lifetime timer with the remaining time. Must run on the entity's thread.
      */
     public void adopt(Entity entity) {
         if (!(entity instanceof LivingEntity living) || !entity.isValid()) return;
@@ -342,7 +343,7 @@ public class WichtelManager {
                 live.remove();
             }
             cleanup.run();
-        }, cleanup, lifetime * 20L);
+        }, cleanup, Lifetime.ticksLeft(plugin, entity, lifetime * 20L));
     }
 
     /** Keeps drops of a player's death safe from Wichtel until they would despawn anyway. */

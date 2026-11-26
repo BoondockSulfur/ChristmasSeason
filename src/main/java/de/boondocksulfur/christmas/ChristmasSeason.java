@@ -70,6 +70,7 @@ public class ChristmasSeason extends JavaPlugin {
         this.foliaScheduler    = new FoliaSchedulerHelper(this);
         this.languageManager   = new LanguageManager(this);
         loadMobConfig();
+        loadState();
         this.backupManager     = new BiomeSnapshotBackup(this);
         this.updateChecker     = new UpdateChecker(this);
         this.biomeCompare      = new BiomeCompare(this);
@@ -148,7 +149,36 @@ public class ChristmasSeason extends JavaPlugin {
 
     // ------------------------------------------------------------ lifecycle
 
-    public boolean isActive() { return getConfig().getBoolean("active", false); }
+    /** Event state, kept in {@code data/state.yml} so config.yml is never rewritten for it. */
+    private volatile boolean active;
+
+    public boolean isActive() { return active; }
+
+    private File stateFile() {
+        return new File(new File(getDataFolder(), "data"), "state.yml");
+    }
+
+    /** Reads the event state; before 2.6.0 it was stored as {@code active} in config.yml. */
+    private void loadState() {
+        File file = stateFile();
+        if (file.exists()) {
+            active = YamlConfiguration.loadConfiguration(file).getBoolean("active", false);
+        } else {
+            active = getConfig().getBoolean("active", false);
+            writeState();
+        }
+    }
+
+    private void writeState() {
+        YamlConfiguration yml = new YamlConfiguration();
+        yml.set("active", active);
+        try {
+            stateFile().getParentFile().mkdirs();
+            yml.save(stateFile());
+        } catch (java.io.IOException e) {
+            getLogger().warning("Could not save data/state.yml: " + e.getMessage());
+        }
+    }
 
     // ------------------------------------------------------------ mobs.yml
 
@@ -213,8 +243,8 @@ public class ChristmasSeason extends JavaPlugin {
 
     /** Persists the active flag ({@code /xmas on|off}). */
     public void setActive(boolean active) {
-        getConfig().set("active", active);
-        saveConfig();
+        this.active = active;
+        writeState();
     }
 
     /** Starts every manager, the per-player tasks of online players and adopts existing event objects. */

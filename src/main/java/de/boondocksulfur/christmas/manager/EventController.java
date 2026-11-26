@@ -4,6 +4,7 @@ import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
 import de.boondocksulfur.christmas.api.XmasStateChangeEvent;
 import de.boondocksulfur.christmas.util.LanguageManager;
+import de.boondocksulfur.christmas.util.YamlValues;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
@@ -17,6 +18,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 /**
@@ -314,19 +316,24 @@ public class EventController {
     // ---------------------------------------------------------- features
 
     /**
-     * Enables or disables a feature at runtime (persisted to config.yml or mobs.yml).
+     * Enables or disables a feature at runtime (written to config.yml or mobs.yml).
      *
      * @return {@code false} for an unknown feature name
      */
     public boolean setFeatureEnabled(String feature, boolean enabled) {
         String key = FEATURES.get(feature.toLowerCase());
         if (key == null) return false;
-        if (isMobKey(key)) {
-            plugin.getMobConfig().set(key, enabled);
-            plugin.saveMobConfig();
-        } else {
-            plugin.getConfig().set(key, enabled);
-            plugin.saveConfig();
+        // Only this one value changes in the file; comments and hand edits stay untouched
+        FileConfiguration cfg = isMobKey(key) ? plugin.getMobConfig() : plugin.getConfig();
+        File file = new File(plugin.getDataFolder(), isMobKey(key) ? "mobs.yml" : "config.yml");
+        try {
+            boolean written = YamlValues.setValue(file, key, String.valueOf(enabled));
+            cfg.set(key, enabled);
+            // Key not in the file yet (older config): save the whole file as before
+            if (!written) cfg.save(file);
+        } catch (IOException | RuntimeException e) {
+            cfg.set(key, enabled);
+            plugin.getLogger().warning("Could not write " + key + " to " + file.getName() + ": " + e.getMessage());
         }
         if (plugin.isActive()) {
             plugin.stopFeatures();

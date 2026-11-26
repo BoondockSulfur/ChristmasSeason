@@ -59,7 +59,7 @@ public final class SpawnUtil {
     /**
      * Checks whether a location is safe for spawning:
      * <ul>
-     *   <li>two blocks of air</li>
+     *   <li>a free spot (air or a snow layer) with air above</li>
      *   <li>solid, non-hazardous ground</li>
      *   <li>not walled in (at most two solid sides)</li>
      *   <li>not far above the player (roofs, tree tops, cliffs)</li>
@@ -81,7 +81,7 @@ public final class SpawnUtil {
 
         Block air1 = w.getBlockAt(x, y, z);
         Block air2 = w.getBlockAt(x, y + 1, z);
-        if (!air1.getType().isAir() || !air2.getType().isAir()) {
+        if (!isFree(air1.getType()) || !air2.getType().isAir()) {
             return false;
         }
 
@@ -128,7 +128,7 @@ public final class SpawnUtil {
 
     /**
      * Walks down from the highest block until solid ground is found and returns the
-     * first air block above it.
+     * first free spot (air or a snow layer) above it.
      *
      * @return surface location, or {@code null} if no usable surface exists in this column
      */
@@ -146,20 +146,25 @@ public final class SpawnUtil {
             return null;
         }
 
-        // Need two blocks of air for entities/chests
+        // Need a free spot with air above for entities/chests
         Block a = ground.getRelative(0, 1, 0);
         Block a2 = ground.getRelative(0, 2, 0);
         int maxY = w.getMaxHeight() - 2;
 
-        while ((!a.getType().isAir() || !a2.getType().isAir()) && a.getY() < maxY) {
+        while ((!isFree(a.getType()) || !a2.getType().isAir()) && a.getY() < maxY) {
             a = a.getRelative(0, 1, 0);
             a2 = a.getRelative(0, 1, 0);
         }
-        if (!a.getType().isAir() || !a2.getType().isAir()) {
+        if (!isFree(a.getType()) || !a2.getType().isAir()) {
             return null;
         }
 
         return new Location(w, x + 0.5, a.getY(), z + 0.5);
+    }
+
+    /** Air, or a snow layer that a chest replaces and mobs and items stand in. */
+    private static boolean isFree(Material m) {
+        return m.isAir() || m == Material.SNOW;
     }
 
     private static boolean isGoodGround(Material m) {

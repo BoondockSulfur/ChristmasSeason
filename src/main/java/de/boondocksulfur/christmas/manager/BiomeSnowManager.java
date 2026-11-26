@@ -321,6 +321,7 @@ public class BiomeSnowManager {
 
         World w = chunk.getWorld();
         ChunkKey key = new ChunkKey(w.getName(), chunk.getX(), chunk.getZ());
+        recordBorderOnLoad(w, key);
         if (processedChunks.contains(key) || manualChunks.contains(key)) return;
 
         if (missedChunks.remove(key)) {
@@ -841,7 +842,7 @@ public class BiomeSnowManager {
                     if (!database.hasChunk(nk.world, nx, nz)) {
                         byte[][] masks = surfaceMasks(w, nx, nz);
                         // The chunk converted right now has not spilled anything yet
-                        clearSpillStrips(database, w, nx, nz, new ChunkKey(w.getName(), chunkX, chunkZ), masks);
+                        replaceSpillStrips(database, w, nx, nz, new ChunkKey(w.getName(), chunkX, chunkZ), masks, null);
                         database.saveBorderMasks(nk.world, nx, nz, masks[0], masks[1]);
                     }
                     borderRecorded.add(nk);
@@ -849,6 +850,36 @@ public class BiomeSnowManager {
                     plugin.debug("Could not store border masks of " + nx + "," + nz + ": " + e.getMessage());
                 }
             }
+        }
+    }
+
+    /**
+     * A chunk next to a converted neighbour loads without a border record (it was unloaded when
+     * the neighbour converted). Snow only falls in loaded chunks, so nothing can have spilled
+     * into it yet: its whole surface is recorded as the pre-event state. Runs on the chunk's
+     * thread ({@code ChunkLoadEvent}).
+     */
+    private void recordBorderOnLoad(World w, ChunkKey key) {
+        BiomeSnapshotDatabase database = db;
+        if (database == null || !database.isOpen()) return;
+        if (borderRecorded.contains(key) || knownLayouts.containsKey(key)) return;
+        try {
+            boolean nextToConverted = false;
+            for (int dx = -1; dx <= 1 && !nextToConverted; dx++) {
+                for (int dz = -1; dz <= 1 && !nextToConverted; dz++) {
+                    if (dx == 0 && dz == 0) continue;
+                    ChunkKey nk = new ChunkKey(key.world, key.x + dx, key.z + dz);
+                    nextToConverted = knownLayouts.containsKey(nk) || database.hasChunk(nk.world, nk.x, nk.z);
+                }
+            }
+            if (!nextToConverted || database.hasChunk(key.world, key.x, key.z)) return;
+            if (borderRecorded.size() > MAX_BORDER_CACHE) borderRecorded.clear(); // the database ignores duplicates
+            byte[][] masks = surfaceMasks(w, key.x, key.z);
+            database.saveBorderMasks(key.world, key.x, key.z, masks[0], masks[1]);
+            borderRecorded.add(key);
+            plugin.verboseDebug("Border masks of chunk " + key.x + "," + key.z + " recorded on load");
+        } catch (SQLException e) {
+            plugin.debug("Could not store border masks of " + key.x + "," + key.z + ": " + e.getMessage());
         }
     }
 
@@ -879,11 +910,12 @@ public class BiomeSnowManager {
     /**
      * Winter biomes spill snow up to a few blocks into neighbouring chunks (biome lookups
      * are blurred across cell borders). Snow or ice in the strip next to a neighbour that is
-     * already converted may therefore come from the event, so it is not recorded as
-     * pre-existing. {@code ignore} is a neighbour that must not count as converted yet.
+     * already converted may therefore come from the event. Those strip bits are taken from
+     * {@code earlier} (masks recorded before the neighbour converted) or cleared if there is no
+     * earlier record. {@code ignore} is a neighbour that must not count as converted yet.
      */
-    private void clearSpillStrips(BiomeSnapshotDatabase database, World w, int chunkX, int chunkZ,
-                                  ChunkKey ignore, byte[][] masks) {
+    private void replaceSpillStrips(BiomeSnapshotDatabase database, World w, int chunkX, int chunkZ,
+                                    ChunkKey ignore, byte[][] masks, byte[][] earlier) {
         final int strip = 4;
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
@@ -894,8 +926,13 @@ public class BiomeSnowManager {
                 int fromZ = dz < 0 ? 0 : (dz > 0 ? 16 - strip : 0), toZ = dz < 0 ? strip : 16;
                 for (int x = fromX; x < toX; x++) {
                     for (int z = fromZ; z < toZ; z++) {
-                        BiomeSnapshotDatabase.BiomeSnapshot3D.clearBit(masks[0], x, z);
-                        BiomeSnapshotDatabase.BiomeSnapshot3D.clearBit(masks[1], x, z);
+                        for (int m = 0; m < 2; m++) {
+                            if (earlier != null && BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(earlier[m], x, z)) {
+                                BiomeSnapshotDatabase.BiomeSnapshot3D.setBit(masks[m], x, z);
+                            } else {
+                                BiomeSnapshotDatabase.BiomeSnapshot3D.clearBit(masks[m], x, z);
+                            }
+                        }
                     }
                 }
             }
@@ -1173,7 +1210,7 @@ public class BiomeSnowManager {
      * time and keeps the configured budget.
      */
     private void updateBudgetMultiplier() {
-        if (!plugin.getConfig().getBoolean("biome.playerBubble.adaptiveBudget.enabled", false)) {
+        if (!plugin.getConfig().getBoolean("biome.playerBubble.adaptiveBudget.enabled", true)) {
             budgetMultiplier = 1;
             return;
         }
@@ -1654,9 +1691,11 @@ public class BiomeSnowManager {
             }
 
             // Remember columns that already carry a snow layer or ice on the surface: those
-            // existed before the event (natural or player-placed) and are kept on restore
+            // existed before the event (natural or player-placed) and are kept on restore.
+            // Next to converted neighbours the border mask, taken before their snow could spill
+            // over, is the better record; without one those strips count as event snow.
             byte[][] masks = surfaceMasks(w, c.getX(), c.getZ());
-            clearSpillStrips(database, w, c.getX(), c.getZ(), null, masks);
+            replaceSpillStrips(database, w, c.getX(), c.getZ(), null, masks, borderMasks(database, w, c.getX(), c.getZ()));
 
             database.saveChunk3D(key.world, key.x, key.z, biomes3D, minY, yStep, masks[0], masks[1]);
             knownLayouts.put(key, layout);

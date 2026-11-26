@@ -77,7 +77,7 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.5.1.jar`
+1. **Download:** Get `ChristmasSeason-2.6.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)

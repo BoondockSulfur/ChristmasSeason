@@ -49,6 +49,8 @@ public class GiftManager {
     private final java.util.concurrent.atomic.AtomicLong lastSpawnBroadcast = new java.util.concurrent.atomic.AtomicLong();
 
     private final NamespacedKey giftChestKey;
+    /** End of the chest's lifetime (epoch millis), so a restart keeps the remaining time. */
+    private final NamespacedKey giftExpiresKey;
     private final NamespacedKey giftOpenedKey;
 
     public GiftManager(ChristmasSeason plugin) {
@@ -56,6 +58,7 @@ public class GiftManager {
         this.lang = plugin.getLanguageManager();
         this.scheduler = plugin.getFoliaScheduler();
         this.giftChestKey = new NamespacedKey(plugin, "gift-chest");
+        this.giftExpiresKey = new NamespacedKey(plugin, "gift-expires");
         this.giftOpenedKey = new NamespacedKey(plugin, "gift-opened");
     }
 
@@ -149,13 +152,16 @@ public class GiftManager {
 
     /**
      * Adopts a marked chest found in a freshly loaded chunk or after a restart:
-     * tracks it and (re)starts its lifetime timer. Must run on the chunk's thread.
+     * tracks it and continues its lifetime timer with the remaining time. Must run on the
+     * chunk's thread.
      */
     public void adopt(Chest chest) {
         Location loc = chest.getLocation();
         if (trackedGifts.contains(loc)) return;
         trackedGifts.add(loc);
-        scheduleLifetime(loc);
+        Long expires = chest.getPersistentDataContainer().get(giftExpiresKey, PersistentDataType.LONG);
+        long remainingTicks = expires == null ? lifetimeTicks() : Math.max(1L, (expires - System.currentTimeMillis()) / 50L);
+        scheduleLifetime(loc, remainingTicks);
         plugin.debug("Adopted gift chest at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
     }
 
@@ -176,6 +182,7 @@ public class GiftManager {
                 trackedGifts.remove(loc);
                 WrappedTask lt = giftLifetimeTasks.remove(loc);
                 if (lt != null) lt.cancel();
+                ((Chest) state).getBlockInventory().clear();
                 loc.getBlock().setType(Material.AIR);
                 plugin.debug("Removed orphaned gift chest at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ());
             }
@@ -206,7 +213,9 @@ public class GiftManager {
     /** Removes the block at {@code loc} if it is still one of our chests; must run on its thread. */
     private void removeIfMarked(Location loc) {
         Block block = loc.getBlock();
-        if (block.getType() == Material.CHEST && isMarkedGiftChest(block.getState())) {
+        if (block.getState() instanceof Chest chest && isMarkedGiftChest(chest)) {
+            // Containers drop their contents when replaced; the loot vanishes with the chest
+            chest.getBlockInventory().clear();
             try { block.setType(Material.AIR, false); } catch (Throwable ignored) { block.setType(Material.AIR); }
         }
     }
@@ -276,13 +285,14 @@ public class GiftManager {
 
         chest.customName(lang.getComponent("entity.gift-chest"));
         chest.getPersistentDataContainer().set(giftChestKey, PersistentDataType.BYTE, (byte) 1);
+        chest.getPersistentDataContainer().set(giftExpiresKey, PersistentDataType.LONG, System.currentTimeMillis() + lifetimeTicks() * 50L);
         chest.update();
 
         fillGiftInventory(chest.getBlockInventory());
 
         Location chestLoc = b.getLocation();
         trackedGifts.add(chestLoc);
-        scheduleLifetime(chestLoc);
+        scheduleLifetime(chestLoc, lifetimeTicks());
 
         if (plugin.getConfig().getBoolean("gifts.broadcastOnSpawn", true) && claimBroadcastSlot()) {
             Bukkit.broadcast(lang.getComponent("broadcast.gift-spawned",
@@ -321,18 +331,21 @@ public class GiftManager {
         }
     }
 
-    /** Schedules removal of the chest after {@code gifts.lifetimeSeconds}. */
-    private void scheduleLifetime(Location chestLoc) {
+    private long lifetimeTicks() {
+        return Math.max(10, plugin.getConfig().getInt("gifts.lifetimeSeconds", 300)) * 20L;
+    }
+
+    /** Schedules removal of the chest after {@code delayTicks}. */
+    private void scheduleLifetime(Location chestLoc, long delayTicks) {
         WrappedTask old = giftLifetimeTasks.remove(chestLoc);
         if (old != null) old.cancel();
 
-        int lifetime = Math.max(10, plugin.getConfig().getInt("gifts.lifetimeSeconds", 300));
         WrappedTask lifetimeTask = scheduler.runAtLocationLater(chestLoc, () -> {
             giftLifetimeTasks.remove(chestLoc);
             // Always untrack, even if players already broke the chest (otherwise the set grows forever)
             trackedGifts.remove(chestLoc);
             removeIfMarked(chestLoc);
-        }, lifetime * 20L);
+        }, delayTicks);
         if (lifetimeTask != null) {
             giftLifetimeTasks.put(chestLoc, lifetimeTask);
         }

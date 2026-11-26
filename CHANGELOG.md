@@ -2,6 +2,19 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [2.6.0] - unreleased
+
+### Fixed
+- **Biome:** natural snow next to converted chunks is no longer removed on restore.
+- **Spawns:** gifts, decorations and mobs spawn on snow layers again (almost none spawned on snowy ground).
+- **Gifts:** removed gift chests no longer drop their loot.
+
+### Changed
+- Gifts, decorations and mobs keep their remaining lifetime across restarts.
+- The event state lives in `data/state.yml`; `/xmas feature` only changes its one line, config.yml is no longer rewritten.
+- **Update checker:** only plugin builds count as updates (the Modrinth project also holds the Fabric version).
+- `biome.playerBubble.adaptiveBudget` is on by default.
+
 ## [2.5.1] - 2026-11-22
 
 ### Fixed

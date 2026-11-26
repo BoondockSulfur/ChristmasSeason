@@ -9,6 +9,7 @@ import org.bukkit.entity.Snowball;
 import org.bukkit.entity.Snowman;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import de.boondocksulfur.christmas.ChristmasSeason;
+import de.boondocksulfur.christmas.util.Lifetime;
 import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.SpawnUtil;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
@@ -200,7 +201,7 @@ public class SnowmanManager {
             Entity live = Bukkit.getEntity(id);
             if (live != null && live.isValid()) live.remove();
             cleanup.run();
-        }, cleanup, lifetime * 20L);
+        }, cleanup, Lifetime.ticksLeft(plugin, snowman, lifetime * 20L));
     }
 
     /**

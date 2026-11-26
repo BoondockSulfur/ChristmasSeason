@@ -1,5 +1,5 @@
 # ChristmasSeason configuration
-active: false
+# (the event state lives in data/state.yml; use /xmas on|off)
 # Primary snow world (kept for compatibility) ...
 snowWorld: "world"
 # ... plus any number of additional snow worlds
@@ -48,7 +48,7 @@ biome:
     # It climbs one step every 2 seconds while the average tick time stays below 75% of
     # targetMspt and drops back to perTickBudget as soon as it is exceeded.
     adaptiveBudget:
-      enabled: false
+      enabled: true
       targetMspt: 30        # average milliseconds per tick (50 = 20 TPS limit)
       maxMultiplier: 3      # highest budget = perTickBudget x maxMultiplier
 
