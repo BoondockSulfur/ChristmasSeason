@@ -2,7 +2,7 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
-## [2.6.0] - unreleased
+## [2.6.0] - 2026-11-26
 
 ### Fixed
 - **Biome:** natural snow next to converted chunks is no longer removed on restore.
