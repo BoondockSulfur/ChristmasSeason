@@ -54,6 +54,9 @@ biome:
 
   # Leave these areas untouched by the biome bubble (lobbies, build areas, ...)
   exclude:
+    # Biomes that are never converted, e.g. a desert that should stay a desert.
+    # Vanilla names or namespaced keys (e.g. "terralith:alpine_grove").
+    biomes: []              # - DESERT   or   - minecraft:badlands
     areas: []               # - {world: world, x1: -100, z1: -100, x2: 100, z2: 100}
     worldGuardRegions: []   # - spawn   or   - world:spawn
     griefPreventionClaims: false

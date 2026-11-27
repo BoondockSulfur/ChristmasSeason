@@ -100,6 +100,9 @@ public class BiomeSnowManager {
     /** Resolved once per start; unknown names fall back to SNOWY_PLAINS with a single warning. */
     private volatile Biome targetBiome = Biome.SNOWY_PLAINS;
 
+    /** Biomes listed in {@code biome.exclude.biomes}, resolved once per start; never converted. */
+    private volatile Set<Biome> excludedBiomes = Set.of();
+
     /** The snapshot database should be available but could not be opened: nothing may be converted. */
     private volatile boolean snapshotUnavailable = false;
 
@@ -148,6 +151,14 @@ public class BiomeSnowManager {
             resolved = Biome.SNOWY_PLAINS;
         }
         targetBiome = resolved;
+
+        Set<Biome> excluded = new HashSet<>();
+        for (String name : plugin.getConfig().getStringList("biome.exclude.biomes")) {
+            Biome biome = Registries.biomeByName(name);
+            if (biome == null) lang.logWarning("log.config.unknown-excluded-biome", name);
+            else excluded.add(biome);
+        }
+        excludedBiomes = Set.copyOf(excluded);
 
         if (plugin.getConfig().getBoolean("biome.enableSnapshot", true)) {
             db = new BiomeSnapshotDatabase(plugin);
@@ -679,9 +690,8 @@ public class BiomeSnowManager {
      * Removes snow layers and thin ice that formed while the chunk was a winter biome,
      * but only where the original biome is not naturally snowy/icy and the column did not
      * already carry snow/ice when the snapshot was taken. Snow and ice only
-     * appear on the sky-exposed surface, so per column only the highest non-air block
-     * (WORLD_SURFACE heightmap - a single snow layer does not block motion and would be
-     * missed by MOTION_BLOCKING) and the block below it are checked. Both steps can be
+     * appear on the sky-exposed surface, so per column only the surface found by
+     * {@link #snowSurface} and the block below it are checked. Both steps can be
      * disabled in the config because they also affect player-placed blocks. Must run on
      * the chunk's thread.
      */
@@ -708,7 +718,7 @@ public class BiomeSnowManager {
 
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
-                Block top = world.getHighestBlockAt(bx + x, bz + z, org.bukkit.HeightMap.WORLD_SURFACE);
+                Block top = snowSurface(world, bx + x, bz + z);
                 if (top.getY() < minY || top.getY() > maxY) continue;
                 int y = Math.max(snapshot.yStart, Math.min(top.getY(), topLayerY));
                 Biome originalBiome = snapshot.getBiomeAtY(x, z, y);
@@ -754,6 +764,24 @@ public class BiomeSnowManager {
     }
 
     /**
+     * Topmost block of a column that can carry snow or ice. Starts at the highest non-air
+     * block (WORLD_SURFACE - a single snow layer does not block motion and would be missed
+     * by MOTION_BLOCKING) and moves down through blocks snow falls through, such as vines,
+     * glow lichen or hanging roots, and through lily pads (water freezes below them), until
+     * it reaches a snow layer, a liquid or another block with collision. Must run on the
+     * chunk's thread.
+     */
+    private static Block snowSurface(World world, int x, int z) {
+        Block block = world.getHighestBlockAt(x, z, org.bukkit.HeightMap.WORLD_SURFACE);
+        int minY = world.getMinHeight();
+        while (block.getY() > minY && block.getType() != Material.SNOW
+                && (block.getType() == Material.LILY_PAD || block.isPassable() && !block.isLiquid())) {
+            block = block.getRelative(0, -1, 0);
+        }
+        return block;
+    }
+
+    /**
      * Minecraft blurs biome borders by up to a few blocks, so snow also falls on the outer
      * blocks of chunks that were never converted (and therefore have no snapshot). After a
      * chunk is restored, the four-block strips of every neighbouring chunk that is not part
@@ -796,7 +824,7 @@ public class BiomeSnowManager {
                     for (int x = fromX; x < toX; x++) {
                         for (int z = fromZ; z < toZ; z++) {
                             if (BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(placed, x, z)) continue;
-                            Block top = world.getHighestBlockAt(bx + x, bz + z, org.bukkit.HeightMap.WORLD_SURFACE);
+                            Block top = snowSurface(world, bx + x, bz + z);
                             if (top.getY() < minY || top.getY() > maxY) continue;
                             Biome current = world.getBiome(bx + x, top.getY(), bz + z);
                             boolean hadSnow = before != null && BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(before[0], x, z);
@@ -895,7 +923,7 @@ public class BiomeSnowManager {
         int bx = chunkX << 4, bz = chunkZ << 4;
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
-                Block top = w.getHighestBlockAt(bx + x, bz + z, org.bukkit.HeightMap.WORLD_SURFACE);
+                Block top = snowSurface(w, bx + x, bz + z);
                 Material t = top.getType();
                 if (t == Material.SNOW) {
                     BiomeSnapshotDatabase.BiomeSnapshot3D.setBit(snowMask, x, z);
@@ -1342,6 +1370,8 @@ public class BiomeSnowManager {
                 int y = top.getY();
                 // Only inside the range the snapshot covers, so the restore finds these blocks again
                 if (y < range[0] || y >= range[1]) continue;
+                // Columns of an excluded biome stay as they are
+                if (!excludedBiomes.isEmpty() && excludedBiomes.contains(w.getBiome(bx + x, y, bz + z))) continue;
                 Material type = top.getType();
 
                 if (type == Material.WATER) {
@@ -1749,7 +1779,7 @@ public class BiomeSnowManager {
                     int y = yStart + layer * step;
                     if (y < range[0] || y >= range[1]) continue;
                     Biome currentBiome = world.getBiome(bx + x, y, bz + z);
-                    if (currentBiome == target) continue;
+                    if (currentBiome == target || excludedBiomes.contains(currentBiome)) continue;
                     boolean allowed;
                     if (isCaveBiome(currentBiome)) {
                         if (caveFloor == Integer.MIN_VALUE) caveFloor = caveFloorY(world, bx + x, bz + z);

@@ -164,6 +164,7 @@ biome:
       maxMultiplier: 3
 
   exclude:
+    biomes: []              # biomes that are never converted, e.g. - DESERT
     areas: []               # - {world: world, x1: -100, z1: -100, x2: 100, z2: 100}
     worldGuardRegions: []   # - spawn   or   - world:spawn
     griefPreventionClaims: false

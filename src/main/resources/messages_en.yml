@@ -245,6 +245,7 @@ log:
   config:
     mobs-migrated: "Moved the settings of Wichtel, elves and snowmen from config.yml to mobs.yml."
     unknown-target-biome: "config.yml: unknown biome in biome.target: '{0}' - SNOWY_PLAINS will be used."
+    unknown-excluded-biome: "config.yml: unknown biome in biome.exclude.biomes: '{0}' - entry ignored."
     unknown-material: "config.yml: unknown material '{0}' in {1} - entry is ignored."
     unknown-enchantment: "config.yml: unknown enchantment '{0}' in {1} - skipped."
     loot-entry-invalid: "config.yml: invalid loot entry in {0} - use MATERIAL:amount or the extended form."

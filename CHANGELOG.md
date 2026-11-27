@@ -2,6 +2,15 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Biome:** `biome.exclude.biomes` keeps chosen biomes (e.g. a desert) unconverted.
+
+### Fixed
+- **Biome:** snow under vines, glow lichen and other hanging blocks is removed on restore.
+- **Biome:** ice under lily pads is thawed on restore.
+
 ## [2.6.0] - 2026-11-26
 
 ### Fixed
