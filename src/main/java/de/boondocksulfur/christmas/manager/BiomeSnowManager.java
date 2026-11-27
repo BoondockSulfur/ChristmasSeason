@@ -52,6 +52,11 @@ public class BiomeSnowManager {
     private final FoliaSchedulerHelper scheduler;
     private volatile BiomeSnapshotDatabase db;
 
+    /** Snow and ice formed by the weather during the event, written to {@link #db} in batches. */
+    private final FormedBlocks formedBlocks = new FormedBlocks();
+    private volatile WrappedTask formedFlushTask;
+    private static final long FORMED_FLUSH_TICKS = 600L;
+
     public BiomeSnowManager(ChristmasSeason plugin) {
         this.plugin = plugin;
         this.lang = plugin.getLanguageManager();
@@ -179,6 +184,11 @@ public class BiomeSnowManager {
             db = null;
         }
 
+        if (db != null) {
+            final BiomeSnapshotDatabase database = db;
+            formedFlushTask = scheduler.runAsyncTimer(() -> flushFormed(database), FORMED_FLUSH_TICKS, FORMED_FLUSH_TICKS);
+        }
+
         if (scheduler.isFolia()) {
             plugin.debug("BiomeSnowManager ready (Folia: per-player schedulers)");
         } else {
@@ -214,6 +224,10 @@ public class BiomeSnowManager {
             globalBubbleTask.cancel();
             globalBubbleTask = null;
         }
+        if (formedFlushTask != null) {
+            formedFlushTask.cancel();
+            formedFlushTask = null;
+        }
         cancelConvertAll();
         for (WrappedTask task : playerBubbleTasks.values()) {
             if (task != null) task.cancel();
@@ -230,6 +244,7 @@ public class BiomeSnowManager {
         chunkRetryCount.clear();
 
         if (closeDatabase && db != null) {
+            flushFormed(db);
             db.printStats();
             db.close();
             plugin.debug("Database closed");
@@ -410,9 +425,12 @@ public class BiomeSnowManager {
             scheduler.runAsync(() -> {
                 try {
                     if (beforeRestore != null) beforeRestore.run();
-                    List<BiomeSnapshotDatabase.ChunkCoords> allChunks = database.getAllChunkCoordinates();
+                    flushFormed(database);
+                    List<BiomeSnapshotDatabase.ChunkCoords> allChunks = new ArrayList<>(database.getAllChunkCoordinates());
                     Set<ChunkKey> restoreSet = new HashSet<>();
                     for (BiomeSnapshotDatabase.ChunkCoords c : allChunks) restoreSet.add(new ChunkKey(c.world, c.x, c.z));
+                    // Neighbours the snow spilled into: loaded and cleaned like the converted chunks
+                    allChunks.addAll(database.getFormedOnlyChunkCoordinates());
                     scheduler.runGlobalTask(() -> runRestore(database, allChunks, restoreSet, perTick, quietIfNothing));
                 } catch (SQLException | RuntimeException e) {
                     restoreNotStarted(e);
@@ -533,7 +551,7 @@ public class BiomeSnowManager {
                     try {
                         if (world == null) {
                             lang.logWarning("log.biome.world-not-found", coords.world);
-                        } else {
+                        } else if (!coords.formedOnly) {
                             loadedSnapshot = database.loadChunk3D(coords.world, coords.x, coords.z);
                             if (loadedSnapshot == null) {
                                 lang.logWarning("log.biome.chunk-data-not-in-db", coords.x, coords.z);
@@ -546,7 +564,7 @@ public class BiomeSnowManager {
 
                     // A chunk that failed to load still counts as finished, otherwise the
                     // completion check never fires
-                    if (loadedSnapshot == null) {
+                    if (loadedSnapshot == null && (world == null || !coords.formedOnly)) {
                         errors.incrementAndGet();
                         finished.incrementAndGet();
                         completionCheck.run();
@@ -567,9 +585,12 @@ public class BiomeSnowManager {
                                 lang.logWarning("log.biome.chunk-not-loaded-db", chunkX, chunkZ);
                             } else {
                                 chunk = finalWorld.getChunkAt(chunkX, chunkZ);
-                                restoreChunkBiomes3D(finalWorld, chunk, snapshot);
-                                removeWinterBlocks3D(finalWorld, chunk, snapshot);
-                                cleanNeighbourBorders(database, finalWorld, chunkX, chunkZ, restoreSet, snapshot);
+                                if (snapshot != null) {
+                                    restoreChunkBiomes3D(finalWorld, chunk, snapshot);
+                                    removeWinterBlocks3D(finalWorld, chunk, snapshot);
+                                    cleanNeighbourBorders(database, finalWorld, chunkX, chunkZ, restoreSet, snapshot);
+                                }
+                                removeFormedBlocks(database, finalWorld, chunk, snapshot);
                                 refreshChunkSafe(finalWorld, chunk);
                                 success = true;
                             }
@@ -584,6 +605,7 @@ public class BiomeSnowManager {
                                 try {
                                     database.deleteChunk(coords.world, chunkX, chunkZ);
                                     database.deletePlaced(coords.world, chunkX, chunkZ);
+                                    database.deleteFormed(coords.world, chunkX, chunkZ);
                                 } catch (SQLException e) {
                                     lang.logWarning("log.database.delete-chunk-error", e.getMessage());
                                 }
@@ -689,9 +711,9 @@ public class BiomeSnowManager {
     /**
      * Removes snow layers and thin ice that formed while the chunk was a winter biome,
      * but only where the original biome is not naturally snowy/icy and the column did not
-     * already carry snow/ice when the snapshot was taken. Snow and ice only
-     * appear on the sky-exposed surface, so per column only the surface found by
-     * {@link #snowSurface} and the block below it are checked. Both steps can be
+     * already carry snow/ice when the snapshot was taken. Covers snow and ice that are still
+     * on the surface (found by {@link #snowSurface}), including blocks that formed before the
+     * event recorded positions ({@link #removeFormedBlocks}). Both steps can be
      * disabled in the config because they also affect player-placed blocks. Must run on
      * the chunk's thread.
      */
@@ -764,21 +786,105 @@ public class BiomeSnowManager {
     }
 
     /**
-     * Topmost block of a column that can carry snow or ice. Starts at the highest non-air
-     * block (WORLD_SURFACE - a single snow layer does not block motion and would be missed
-     * by MOTION_BLOCKING) and moves down through blocks snow falls through, such as vines,
-     * glow lichen or hanging roots, and through lily pads (water freezes below them), until
-     * it reaches a snow layer, a liquid or another block with collision. Must run on the
-     * chunk's thread.
+     * The block of a column where the weather puts snow or ice, by the same rule Minecraft
+     * uses: snow lies directly above the highest block that blocks motion, ice is that block
+     * itself (water counts as blocking). Vines, lily pads, ladders and similar blocks do not
+     * block motion, so snow and ice below them are found as well. Must run on the chunk's thread.
      */
     private static Block snowSurface(World world, int x, int z) {
-        Block block = world.getHighestBlockAt(x, z, org.bukkit.HeightMap.WORLD_SURFACE);
-        int minY = world.getMinHeight();
-        while (block.getY() > minY && block.getType() != Material.SNOW
-                && (block.getType() == Material.LILY_PAD || block.isPassable() && !block.isLiquid())) {
-            block = block.getRelative(0, -1, 0);
+        Block top = world.getHighestBlockAt(x, z, org.bukkit.HeightMap.MOTION_BLOCKING);
+        Block above = top.getRelative(0, 1, 0);
+        return above.getType() == Material.SNOW ? above : top;
+    }
+
+    // ------------------------------------------------------------ formed snow/ice
+
+    /**
+     * Records a snow layer or ice block the weather (or a snow golem) formed while the event is
+     * active, so the restore can remove it even after something was built on top. Only
+     * positions inside the changed Y range (plus margin) count, and none in naturally
+     * snowy/icy areas the event did not touch. Called from {@code BlockFormEvent} on the
+     * block's thread.
+     */
+    public void recordFormed(Block block, boolean ice) {
+        if (db == null) return;
+        World w = block.getWorld();
+        int y = block.getY();
+        if (y < minChangeY(w) - CLEANUP_MARGIN || y > maxChangeY(w) + CLEANUP_MARGIN) return;
+        Biome biome = w.getBiome(block.getX(), y, block.getZ());
+        if (biome != targetBiome && (ice ? isNaturallyIcyBiome(biome) : isNaturallySnowyBiome(biome))) return;
+        formedBlocks.record(w.getName(), block.getX(), y, block.getZ(), ice);
+    }
+
+    /** Writes the recorded positions into the database; logs instead of throwing. */
+    private void flushFormed(BiomeSnapshotDatabase database) {
+        try {
+            formedBlocks.flush(database);
+        } catch (SQLException e) {
+            plugin.debug("Could not store formed snow/ice: " + e.getMessage());
         }
-        return block;
+    }
+
+    /**
+     * Removes the snow layers and ice recorded for this chunk, if they are still there and the
+     * column is not one that keeps its snow/ice: originally snowy/icy biome (from the snapshot,
+     * or the current biome when the chunk has none), snow/ice before the event, or placed by a
+     * player. Must run on the chunk's thread.
+     */
+    private void removeFormedBlocks(BiomeSnapshotDatabase database, World world, Chunk chunk,
+                                    BiomeSnapshotDatabase.BiomeSnapshot3D snapshot) {
+        boolean removeSnow = plugin.getConfig().getBoolean("biome.restore.removeSnowLayers", true);
+        boolean removeIce = plugin.getConfig().getBoolean("biome.restore.removeIce", true);
+        if ((!removeSnow && !removeIce) || database == null || !database.isOpen()) return;
+        int[] formed;
+        try {
+            formed = database.loadFormed(world.getName(), chunk.getX(), chunk.getZ());
+        } catch (SQLException e) {
+            plugin.debug("Could not read formed snow/ice: " + e.getMessage());
+            return;
+        }
+        if (formed == null || formed.length == 0) return;
+
+        byte[] placed = placedMask(database, world, chunk.getX(), chunk.getZ());
+        byte[][] earlier = borderMasks(database, world, chunk.getX(), chunk.getZ());
+        int bx = chunk.getX() << 4, bz = chunk.getZ() << 4;
+        int[] removed = new int[2];
+        for (int packed : formed) {
+            int x = FormedBlocks.localX(packed), z = FormedBlocks.localZ(packed);
+            boolean ice = FormedBlocks.isIce(packed);
+            if (ice ? !removeIce : !removeSnow) continue;
+            if (BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(placed, x, z)) continue;
+            // Columns that carried snow/ice before the event keep it
+            boolean hadBefore;
+            int m = ice ? 1 : 0;
+            if (snapshot != null) {
+                hadBefore = (ice ? snapshot.hadIce(x, z) : snapshot.hadSnow(x, z))
+                        && (earlier == null || BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(earlier[m], x, z));
+            } else {
+                hadBefore = earlier != null && BiomeSnapshotDatabase.BiomeSnapshot3D.isBitSet(earlier[m], x, z);
+            }
+            if (hadBefore) continue;
+            Block block = world.getBlockAt(bx + x, FormedBlocks.y(packed), bz + z);
+            Biome original = originalBiome(world, snapshot, block);
+            if (ice) {
+                if (block.getType() == Material.ICE && !isNaturallyIcyBiome(original)) cleanColumnTop(block, false, true, removed);
+            } else {
+                if (block.getType() == Material.SNOW && !isNaturallySnowyBiome(original)) cleanColumnTop(block, true, false, removed);
+            }
+        }
+        if (plugin.isDebugMode() && (removed[0] > 0 || removed[1] > 0)) {
+            plugin.debug("Chunk " + chunk.getX() + "," + chunk.getZ() + ": removed " + removed[0] + " formed snow layers, " + removed[1] + " formed ice");
+        }
+    }
+
+    /** Biome a block had before the event: from the snapshot (clamped to its layers), else the current one. */
+    private static Biome originalBiome(World world, BiomeSnapshotDatabase.BiomeSnapshot3D snapshot, Block block) {
+        if (snapshot != null) {
+            int y = Math.max(snapshot.yStart, Math.min(block.getY(), snapshot.getYEnd() - snapshot.yStep));
+            Biome original = snapshot.getBiomeAtY(block.getX() & 15, block.getZ() & 15, y);
+            if (original != null) return original;
+        }
+        return world.getBiome(block.getX(), block.getY(), block.getZ());
     }
 
     /**

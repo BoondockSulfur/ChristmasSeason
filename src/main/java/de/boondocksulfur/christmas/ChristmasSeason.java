@@ -102,6 +102,7 @@ public class ChristmasSeason extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new GiftProtectionListener(this), this);
         Bukkit.getPluginManager().registerEvents(new GiftOpenListener(this), this);
         Bukkit.getPluginManager().registerEvents(new PlayerPlacementListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new FormedSnowListener(this), this);
         Bukkit.getPluginManager().registerEvents(new TrackedObjectListener(this), this);
         Bukkit.getPluginManager().registerEvents(new WichtelTargetBlocker(), this);
         Bukkit.getPluginManager().registerEvents(new SnowmanDamageListener(), this);

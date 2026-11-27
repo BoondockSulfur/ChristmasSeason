@@ -121,7 +121,66 @@ public class BiomeSnapshotDatabase {
             stmt.execute("CREATE TABLE IF NOT EXISTS border_masks (" +
                          "world TEXT NOT NULL, x INTEGER NOT NULL, z INTEGER NOT NULL, " +
                          "snow BLOB NOT NULL, ice BLOB NOT NULL, PRIMARY KEY (world, x, z))");
+            // Snow layers and ice formed by the weather during the event, packed positions
+            // (see FormedBlocks; x/z are chunk coordinates)
+            stmt.execute("CREATE TABLE IF NOT EXISTS formed_blocks (" +
+                         "world TEXT NOT NULL, x INTEGER NOT NULL, z INTEGER NOT NULL, " +
+                         "data BLOB NOT NULL, PRIMARY KEY (world, x, z))");
         }
+    }
+
+    // ------------------------------------------------------------ formed snow/ice
+
+    /** Adds recorded positions to the chunk's record. */
+    public synchronized void mergeFormed(String world, int chunkX, int chunkZ, int[] positions) throws SQLException {
+        int[] existing = loadFormed(world, chunkX, chunkZ);
+        int[] merged = existing == null ? positions : FormedBlocks.union(existing, positions);
+        try (PreparedStatement pstmt = connection.prepareStatement(
+                "INSERT OR REPLACE INTO formed_blocks (world, x, z, data) VALUES (?, ?, ?, ?)")) {
+            pstmt.setString(1, world);
+            pstmt.setInt(2, chunkX);
+            pstmt.setInt(3, chunkZ);
+            pstmt.setBytes(4, FormedBlocks.encode(merged));
+            pstmt.executeUpdate();
+        }
+    }
+
+    /** @return the recorded positions of a chunk ({@link FormedBlocks#pack}), or {@code null} if none */
+    public synchronized int[] loadFormed(String world, int chunkX, int chunkZ) throws SQLException {
+        try (PreparedStatement pstmt = connection.prepareStatement(
+                "SELECT data FROM formed_blocks WHERE world = ? AND x = ? AND z = ?")) {
+            pstmt.setString(1, world);
+            pstmt.setInt(2, chunkX);
+            pstmt.setInt(3, chunkZ);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) return FormedBlocks.decode(rs.getBytes(1));
+            }
+        }
+        return null;
+    }
+
+    /** Forgets the recorded positions of a chunk (after its restore). */
+    public synchronized void deleteFormed(String world, int chunkX, int chunkZ) throws SQLException {
+        try (PreparedStatement pstmt = connection.prepareStatement(
+                "DELETE FROM formed_blocks WHERE world = ? AND x = ? AND z = ?")) {
+            pstmt.setString(1, world);
+            pstmt.setInt(2, chunkX);
+            pstmt.setInt(3, chunkZ);
+            pstmt.executeUpdate();
+        }
+    }
+
+    /** @return chunks with recorded positions but no snapshot (neighbours the snow spilled into) */
+    public synchronized java.util.List<ChunkCoords> getFormedOnlyChunkCoordinates() throws SQLException {
+        java.util.List<ChunkCoords> result = new java.util.ArrayList<>();
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT f.world, f.x, f.z FROM formed_blocks f "
+                     + "WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.world = f.world AND c.x = f.x AND c.z = f.z)")) {
+            while (rs.next()) {
+                result.add(new ChunkCoords(rs.getString(1), rs.getInt(2), rs.getInt(3), true));
+            }
+        }
+        return result;
     }
 
     // ------------------------------------------------------------ neighbour masks
@@ -416,6 +475,7 @@ public class BiomeSnapshotDatabase {
             stmt.execute("DELETE FROM chunks");
             stmt.execute("DELETE FROM placed_columns");
             stmt.execute("DELETE FROM border_masks");
+            stmt.execute("DELETE FROM formed_blocks");
         }
         try (Statement stmt = connection.createStatement()) {
             stmt.execute("VACUUM");
@@ -654,8 +714,15 @@ public class BiomeSnapshotDatabase {
         public final String world;
         public final int x;
         public final int z;
+        /** {@code true} = no snapshot, only recorded snow/ice ({@link #getFormedOnlyChunkCoordinates}) */
+        public final boolean formedOnly;
 
         public ChunkCoords(String world, int x, int z) {
+            this(world, x, z, false);
+        }
+
+        public ChunkCoords(String world, int x, int z, boolean formedOnly) {
+            this.formedOnly = formedOnly;
             this.world = world;
             this.x = x;
             this.z = z;
