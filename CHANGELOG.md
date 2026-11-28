@@ -2,7 +2,7 @@
 
 All notable changes to the ChristmasSeason plugin will be documented in this file.
 
-## [Unreleased]
+## [2.7.0] - 2026-11-28
 
 ### Added
 - **Biome:** `biome.exclude.biomes` keeps chosen biomes (e.g. a desert) unconverted.

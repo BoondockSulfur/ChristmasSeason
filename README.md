@@ -78,7 +78,7 @@ Looking for the Fabric version? See [ChristmasSeason-Fabric](https://github.com/
 
 ## 📦 Installation
 
-1. **Download:** Get `ChristmasSeason-2.6.0.jar`
+1. **Download:** Get `ChristmasSeason-2.7.0.jar`
 2. **Installation:** Copy the JAR to the `plugins/` folder
 3. **Server Start:** Start your server (Paper/Purpur/Folia)
 4. **Configuration:** Adjust `config.yml` (optional)
@@ -365,6 +365,12 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 
 ## 🔄 Migration Guide
 
+### From v2.6.0 to v2.7.0
+
+1. **Stop the server**
+2. **Replace the JAR** with `ChristmasSeason-2.7.0.jar`
+3. **Start the server** - done! Optional new key `biome.exclude.biomes` keeps chosen biomes unconverted
+
 ### From v2.5.x to v2.6.0
 
 1. **Stop the server**
@@ -424,6 +430,10 @@ Chunks are spread evenly over the interval; one chunk costs about 2 ms on the ma
 ## 📝 Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+
+**v2.7.0 Highlights:**
+- 🏜️ `biome.exclude.biomes` keeps chosen biomes (e.g. a desert) unconverted
+- 🧹 Restore also removes snow and ice under vines, lily pads and ladders, under later builds and in unloaded neighbouring chunks
 
 **v2.6.0 Highlights:**
 - ❄️ Natural snow next to converted chunks stays after `/xmas off`
