@@ -21,6 +21,7 @@ import de.boondocksulfur.christmas.integration.PlaceholderIntegration;
 import de.boondocksulfur.christmas.integration.RegionIntegration;
 import de.boondocksulfur.christmas.listener.*;
 import de.boondocksulfur.christmas.manager.*;
+import de.boondocksulfur.christmas.util.ConfigMerger;
 import de.boondocksulfur.christmas.util.LanguageManager;
 import de.boondocksulfur.christmas.util.FoliaSchedulerHelper;
 import de.boondocksulfur.christmas.util.Registries;
@@ -63,12 +64,14 @@ public class ChristmasSeason extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        ConfigMerger.Result configMerge = mergeDefaults("config.yml");
 
         saveResourceIfAbsent("messages_de.yml");
         saveResourceIfAbsent("messages_en.yml");
 
         this.foliaScheduler    = new FoliaSchedulerHelper(this);
         this.languageManager   = new LanguageManager(this);
+        logMerge("config.yml", configMerge);
         loadMobConfig();
         loadState();
         this.backupManager     = new BiomeSnapshotBackup(this);
@@ -208,6 +211,7 @@ public class ChristmasSeason extends JavaPlugin {
         File file = new File(getDataFolder(), "mobs.yml");
         boolean created = !file.exists();
         if (created) saveResource("mobs.yml", false);
+        else logMerge("mobs.yml", mergeDefaults("mobs.yml"));
 
         YamlConfiguration cfg = YamlConfiguration.loadConfiguration(file);
         try (java.io.Reader in = new java.io.InputStreamReader(
@@ -240,6 +244,23 @@ public class ChristmasSeason extends JavaPlugin {
         saveMobConfig();
         saveConfig();
         languageManager.logInfo("log.config.mobs-migrated");
+    }
+
+    /** Adds keys missing in a file of the plugin folder from the bundled default of the same name. */
+    private ConfigMerger.Result mergeDefaults(String name) {
+        return ConfigMerger.merge(new File(getDataFolder(), name), getResource(name));
+    }
+
+    private void logMerge(String name, ConfigMerger.Result result) {
+        if (!result.addedKeys().isEmpty()) {
+            languageManager.logInfo("log.config.keys-added", name, String.join(", ", result.addedKeys()));
+        }
+        if (!result.skippedKeys().isEmpty()) {
+            languageManager.logWarning("log.config.keys-skipped", name, String.join(", ", result.skippedKeys()));
+        }
+        if (result.error() != null) {
+            languageManager.logWarning("log.config.merge-failed", name, result.error());
+        }
     }
 
     /** Persists the active flag ({@code /xmas on|off}). */
@@ -305,6 +326,7 @@ public class ChristmasSeason extends JavaPlugin {
 
     /** {@code /xmas reload}: reloads config and language, restarts all managers. */
     public void reloadAll() {
+        logMerge("config.yml", mergeDefaults("config.yml"));
         reloadConfig();
         loadMobConfig();
         languageManager.reload();

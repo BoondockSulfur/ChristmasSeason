@@ -244,6 +244,9 @@ log:
 
   config:
     mobs-migrated: "Moved the settings of Wichtel, elves and snowmen from config.yml to mobs.yml."
+    keys-added: "{0}: added new settings: {1} (previous version saved as {0}.old)"
+    keys-skipped: "{0}: could not add new settings automatically (unusual layout) - built-in defaults are used for: {1}"
+    merge-failed: "{0}: could not check for new settings: {1}"
     unknown-target-biome: "config.yml: unknown biome in biome.target: '{0}' - SNOWY_PLAINS will be used."
     unknown-excluded-biome: "config.yml: unknown biome in biome.exclude.biomes: '{0}' - entry ignored."
     unknown-material: "config.yml: unknown material '{0}' in {1} - entry is ignored."

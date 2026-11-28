@@ -6,6 +6,7 @@ All notable changes to the ChristmasSeason plugin will be documented in this fil
 
 ### Added
 - **Biome:** `biome.exclude.biomes` keeps chosen biomes (e.g. a desert) unconverted.
+- **Config:** new settings are added to an existing `config.yml` and `mobs.yml` automatically, with their comments (previous version kept as `.old`).
 
 ### Fixed
 - **Biome:** snow and ice under vines, lily pads, ladders and similar blocks are removed on restore.
